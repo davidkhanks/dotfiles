@@ -1,21 +1,19 @@
 return {
-	"williamboman/mason.nvim",
-	commit = "e2f7f9044ec30067bc11800a9e266664b88cda22",
+	-- mason.nvim moved from williamboman/ to mason-org/ with v2.
+	"mason-org/mason.nvim",
+	commit = "2a6940af80375532e5e9e7c1f2fc6319a1b7a69d",
 	dependencies = {
-		{ "williamboman/mason-lspconfig.nvim", commit = "25c11854aa25558ee6c03432edfa0df0217324be" },
-		{ "WhoIsSethDaniel/mason-tool-installer.nvim", commit = "c5e07b8ff54187716334d585db34282e46fa2932" },
+		{
+			"mason-org/mason-lspconfig.nvim",
+			commit = "24d4ab0838b250753b307a8747ade06dc99aed9d",
+		},
+		{
+			"WhoIsSethDaniel/mason-tool-installer.nvim",
+			commit = "443f1ef8b5e6bf47045cb2217b6f748a223cf7dc",
+		},
 	},
 	config = function()
-		-- import mason
-		local mason = require("mason")
-
-		-- import mason-lspconfig
-		local mason_lspconfig = require("mason-lspconfig")
-
-		local mason_tool_installer = require("mason-tool-installer")
-
-		-- enable mason and configure icons
-		mason.setup({
+		require("mason").setup({
 			ui = {
 				icons = {
 					package_installed = "✓",
@@ -25,25 +23,17 @@ return {
 			},
 		})
 
-		mason_lspconfig.setup({
-			-- list of servers for mason to install
-			ensure_installed = {
-				"cssls",
-				"emmet_ls",
-				"gopls",
-				"graphql",
-				"html",
-				"lua_ls",
-				"prismals",
-				"pyright",
-				"svelte",
-				"tailwindcss",
-				"terraformls",
-				"ts_ls",
-			},
+		-- mason-lspconfig v2 removed setup_handlers(). Its remaining jobs are
+		-- installing servers and, optionally, calling vim.lsp.enable() for the
+		-- ones it installed. We turn that off and enable explicitly in
+		-- plugins/lsp/lspconfig.lua, so enabling is guaranteed to happen after
+		-- the vim.lsp.config() definitions rather than racing them.
+		require("mason-lspconfig").setup({
+			ensure_installed = require("davidkhanks.lsp-servers"),
+			automatic_enable = false,
 		})
 
-		mason_tool_installer.setup({
+		require("mason-tool-installer").setup({
 			ensure_installed = {
 				"prettier", -- prettier formatter
 				"stylua", -- lua formatter
