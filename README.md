@@ -35,6 +35,7 @@ own without re-answering every run.
 | `coolercontrol` | `coolercontrol-bin`, `nct6775`, the daemon, `hosts/<host>/` config |
 | `slack` | `slack-desktop`, the Wayland desktop entry, MIME database |
 | `airpods` | third-party shell plugin plus its compiled `librepods` daemon |
+| `hyprmoncfg` | third-party plugin + AUR binary for auto-switching monitor profiles |
 | `work_repos` | `age` tooling, decrypting the manifest, cloning the repos |
 | `work_setup` | dev environment: local tools, worktrees, container homes, images |
 | `nvim_default` | symlink `~/.config/nvim` at this config |

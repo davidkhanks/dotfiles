@@ -58,6 +58,13 @@ AUR_COOLERCONTROL=(coolercontrol-bin)
 # Third-party Omarchy shell plugin providing an AirPods bar widget. `plugin add`
 # only clones files; the plugin's own `setup` script compiles a C++/Qt6 daemon
 # and enables a user service, so the build dependencies must exist first.
+# Monitor profiles keyed on make/model/serial rather than port, re-applied on
+# hotplug, lid events and resume. The plugin is pure QML, but it drives an
+# external hyprmoncfg binary, so the AUR package must exist before it is useful.
+HYPRMONCFG_PLUGIN_URL="https://github.com/crmne/omarchy-hyprmoncfg.git"
+HYPRMONCFG_PLUGIN_ID="crmne.hyprmoncfg"
+AUR_HYPRMONCFG=(hyprmoncfg)
+
 AIRPODS_PLUGIN_URL="https://github.com/thisisgm/omarchy-pods"
 AIRPODS_PLUGIN_ID="io.github.thisisgm.omapods"
 PACKAGES_AIRPODS=(cmake ninja qt6-connectivity qt6-tools qt6-declarative pkgconf libpulse)
@@ -93,7 +100,7 @@ HOST_FILES=(
 # different things (no fan control on a laptop, for instance), and neither
 # should have to re-answer the prompts on every run.
 BOOTSTRAP_CONF="${BOOTSTRAP_CONF:-$DOTFILES_DIR/bootstrap.conf}"
-MODULE_KEYS=(yubikey coolercontrol slack airpods work_repos work_setup nvim_default nvim_sync)
+MODULE_KEYS=(yubikey coolercontrol slack airpods hyprmoncfg work_repos work_setup nvim_default nvim_sync)
 declare -A MODULE_ENABLED=()
 
 module_desc() {
@@ -102,6 +109,7 @@ module_desc() {
     coolercontrol) echo "CoolerControl fan curves (nct6775 module, daemon, host config)" ;;
     slack)         echo "Slack desktop app with Wayland flags" ;;
     airpods)       echo "AirPods bar widget (third-party shell plugin + compiled daemon)" ;;
+    hyprmoncfg)    echo "Monitor profiles that auto-switch on hotplug (third-party plugin)" ;;
     work_repos)    echo "Clone work repositories (age-encrypted manifest)" ;;
     work_setup)    echo "Prepare the work dev environment (tools, worktrees, containers)" ;;
     nvim_default)  echo "Make this Neovim config the default (~/.config/nvim)" ;;
@@ -325,6 +333,7 @@ step_aur_packages() {
   local -a want=()
   enabled slack         && want+=("${AUR_SLACK[@]}")
   enabled coolercontrol && want+=("${AUR_COOLERCONTROL[@]}")
+  enabled hyprmoncfg    && want+=("${AUR_HYPRMONCFG[@]}")
   if (( ${#want[@]} == 0 )); then
     skip "no AUR packages selected"
     return 0
@@ -626,6 +635,34 @@ step_yubikey_ssh() {
   else
     fail "PKCS#11 module did not return the PIV key (is pcscd running?)"
   fi
+}
+
+step_hyprmoncfg() {
+  enabled hyprmoncfg || return 0
+  section "Monitor profile manager"
+
+  # The AUR package is installed by step_aur_packages, which runs earlier, so
+  # the binary the plugin drives is already present by the time we get here.
+  if have hyprmoncfg; then
+    ok "hyprmoncfg binary present"
+  else
+    fail "hyprmoncfg binary missing (AUR install did not run or failed)"
+  fi
+
+  local dir="$HOME/.config/omarchy/plugins/$HYPRMONCFG_PLUGIN_ID"
+  if [[ -d "$dir" ]]; then
+    ok "plugin present"
+  elif ! have omarchy; then
+    skip "omarchy not available"
+  elif acting "add plugin from $HYPRMONCFG_PLUGIN_URL"; then
+    # Third-party QML, and it declares a service kind, so it runs continuously
+    # inside the shell process rather than only when opened. Opt-in on purpose.
+    omarchy plugin add "$HYPRMONCFG_PLUGIN_URL" --enable --yes && changed "plugin added" \
+      || fail "plugin add failed"
+  fi
+
+  note "A newly added plugin needs 'omarchy restart shell' before it renders.
+     Monitor profiles are stored by the hyprmoncfg binary, not in this repo."
 }
 
 step_airpods() {
@@ -1052,6 +1089,7 @@ main() {
   step_host_files
   step_services
   step_airpods
+  step_hyprmoncfg
   step_yubikey_ssh
   step_ssh_agent
   step_work_repos
