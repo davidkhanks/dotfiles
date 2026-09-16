@@ -34,6 +34,7 @@ own without re-answering every run.
 | `yubikey` | libfido2/ykman/pcscd, `~/.ssh/config`, public key export |
 | `coolercontrol` | `coolercontrol-bin`, `nct6775`, the daemon, `hosts/<host>/` config |
 | `slack` | `slack-desktop`, the Wayland desktop entry, MIME database |
+| `airpods` | third-party shell plugin plus its compiled `librepods` daemon |
 | `work_repos` | `age` tooling, decrypting the manifest, cloning the repos |
 | `work_setup` | dev environment: local tools, worktrees, container homes, images |
 | `nvim_default` | symlink `~/.config/nvim` at this config |
@@ -42,6 +43,12 @@ own without re-answering every run.
 Turning a module off removes its packages, services, kernel modules and host
 files from the run entirely — a laptop with `coolercontrol=no` never installs
 CoolerControl, never loads `nct6775`, and never touches `/etc`.
+
+The `airpods` module is separate because it installs a **third-party** shell
+plugin, whose QML runs inside the Omarchy shell process, and compiles a C++/Qt6
+daemon. Two behaviours are worth knowing: a newly added plugin does not render
+until `omarchy restart shell`, and the widget hides itself unless AirPods are
+connected (`omarchy bar set <id> hideWhenDisconnected false --json` pins it).
 
 Edit `bootstrap.conf` by hand or re-run with `--reconfigure`. A new module added
 later prompts only for itself, leaving existing answers alone. Non-interactive

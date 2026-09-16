@@ -55,6 +55,13 @@ PACKAGES_AGE=(age age-plugin-yubikey)   # decrypting the work-repo manifest
 AUR_SLACK=(slack-desktop)
 AUR_COOLERCONTROL=(coolercontrol-bin)
 
+# Third-party Omarchy shell plugin providing an AirPods bar widget. `plugin add`
+# only clones files; the plugin's own `setup` script compiles a C++/Qt6 daemon
+# and enables a user service, so the build dependencies must exist first.
+AIRPODS_PLUGIN_URL="https://github.com/thisisgm/omarchy-pods"
+AIRPODS_PLUGIN_ID="io.github.thisisgm.omapods"
+PACKAGES_AIRPODS=(cmake ninja qt6-connectivity qt6-tools qt6-declarative pkgconf libpulse)
+
 # Kernel modules that must be present at every boot.
 #   nct6775 -- Nuvoton NCT6791D Super I/O on this ASRock board. Without it
 #              there are no fan/PWM hwmon entries at all and CoolerControl has
@@ -86,7 +93,7 @@ HOST_FILES=(
 # different things (no fan control on a laptop, for instance), and neither
 # should have to re-answer the prompts on every run.
 BOOTSTRAP_CONF="${BOOTSTRAP_CONF:-$DOTFILES_DIR/bootstrap.conf}"
-MODULE_KEYS=(yubikey coolercontrol slack work_repos work_setup nvim_default nvim_sync)
+MODULE_KEYS=(yubikey coolercontrol slack airpods work_repos work_setup nvim_default nvim_sync)
 declare -A MODULE_ENABLED=()
 
 module_desc() {
@@ -94,6 +101,7 @@ module_desc() {
     yubikey)       echo "YubiKey PIV SSH (libfido2, pcscd, ssh config, key export)" ;;
     coolercontrol) echo "CoolerControl fan curves (nct6775 module, daemon, host config)" ;;
     slack)         echo "Slack desktop app with Wayland flags" ;;
+    airpods)       echo "AirPods bar widget (third-party shell plugin + compiled daemon)" ;;
     work_repos)    echo "Clone work repositories (age-encrypted manifest)" ;;
     work_setup)    echo "Prepare the work dev environment (tools, worktrees, containers)" ;;
     nvim_default)  echo "Make this Neovim config the default (~/.config/nvim)" ;;
@@ -277,6 +285,7 @@ step_packages() {
   section "Packages"
   local -a want=("${PACKAGES_CORE[@]}")
   enabled yubikey    && want+=("${PACKAGES_YUBIKEY[@]}")
+  enabled airpods    && want+=("${PACKAGES_AIRPODS[@]}")
   enabled work_repos && want+=("${PACKAGES_AGE[@]}")
   local missing=()
   for p in "${want[@]}"; do
@@ -617,6 +626,56 @@ step_yubikey_ssh() {
   else
     fail "PKCS#11 module did not return the PIV key (is pcscd running?)"
   fi
+}
+
+step_airpods() {
+  enabled airpods || return 0
+  section "AirPods bar widget"
+
+  local dir="$HOME/.config/omarchy/plugins/$AIRPODS_PLUGIN_ID"
+  if [[ -d "$dir" ]]; then
+    ok "plugin present"
+  elif ! have omarchy; then
+    skip "omarchy not available"
+    return 0
+  elif acting "add plugin from $AIRPODS_PLUGIN_URL"; then
+    # Third-party QML runs inside the shell process; this is a deliberate
+    # opt-in, which is why it is its own module.
+    omarchy plugin add "$AIRPODS_PLUGIN_URL" --enable --yes && changed "plugin added" \
+      || { fail "plugin add failed"; return 0; }
+  fi
+
+  # The daemon is compiled, so a fresh clone has no binary until setup runs.
+  if [[ -x "$HOME/.local/bin/librepods" ]]; then
+    ok "daemon built"
+  elif [[ ! -x "$dir/setup" ]]; then
+    skip "plugin has no setup script"
+  elif acting "run the plugin setup (compiles the daemon, several minutes)"; then
+    # setup's first line installs build deps with sudo; they are already in
+    # PACKAGES_AIRPODS so that step is a no-op by the time we get here.
+    ("$dir/setup") && changed "daemon built and service enabled" || fail "plugin setup failed"
+  fi
+
+  if systemctl --user list-unit-files librepods.service >/dev/null 2>&1; then
+    if [[ "$(systemctl --user is-enabled librepods.service 2>/dev/null)" == "enabled" ]]; then
+      ok "librepods.service enabled"
+    elif acting "enable librepods.service"; then
+      systemctl --user enable --now librepods.service; changed "librepods.service enabled"
+    fi
+    if [[ "$(systemctl --user is-active librepods.service 2>/dev/null)" == "active" ]]; then
+      ok "librepods.service active"
+    elif acting "start librepods.service"; then
+      systemctl --user start librepods.service; changed "librepods.service started"
+    fi
+  else
+    skip "librepods.service not installed yet"
+  fi
+
+  # The widget hides itself when nothing is connected, which reads as a broken
+  # install. Worth saying once rather than rediscovering it.
+  note "The AirPods icon stays hidden unless AirPods are connected. To pin it:
+       omarchy bar set $AIRPODS_PLUGIN_ID hideWhenDisconnected false --json
+     A newly added plugin needs 'omarchy restart shell' before it renders."
 }
 
 step_ssh_agent() {
@@ -992,6 +1051,7 @@ main() {
   step_kernel_modules
   step_host_files
   step_services
+  step_airpods
   step_yubikey_ssh
   step_ssh_agent
   step_work_repos
