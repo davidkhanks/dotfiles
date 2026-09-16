@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+#
+# host-config -- manage machine-specific system files that cannot be stowed.
+#
+#   host-config diff      show drift between this host's live files and the repo
+#   host-config capture   copy live files INTO the repo (then commit them)
+#   host-config restore   copy repo files back OUT to the system (needs sudo)
+#
+# Stow only targets $HOME, so root-owned files under /etc are tracked here
+# instead, scoped per hostname under hosts/<hostname>/. Nothing is shared
+# between machines: device UIDs and fan curves are hardware-specific and
+# restoring another host's copy would be wrong.
+set -euo pipefail
+
+DOTFILES="${DOTFILES_DIR:-$HOME/dotfiles}"
+HOST="$(hostnamectl hostname 2>/dev/null || hostname)"
+ROOT="$DOTFILES/hosts/$HOST"
+
+# Files tracked for this host, as paths relative to /.
+FILES=(
+  "etc/coolercontrol/config.toml"
+)
+
+usage() { sed -n '3,12p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+[[ $# -ge 1 ]] || usage 1
+
+case "$1" in
+diff)
+  rc=0
+  for f in "${FILES[@]}"; do
+    if [[ ! -e "/$f" ]]; then echo "missing on system: /$f"; rc=1; continue; fi
+    if [[ ! -e "$ROOT/$f" ]]; then echo "not yet captured: $f"; rc=1; continue; fi
+    if diff -q "$ROOT/$f" "/$f" >/dev/null; then
+      echo "same: $f"
+    else
+      echo "DRIFT: $f"
+      diff -u "$ROOT/$f" "/$f" | sed 's/^/    /' | head -40
+      rc=1
+    fi
+  done
+  exit $rc
+  ;;
+capture)
+  for f in "${FILES[@]}"; do
+    [[ -e "/$f" ]] || { echo "skip (absent): /$f"; continue; }
+    mkdir -p "$ROOT/$(dirname "$f")"
+    cp "/$f" "$ROOT/$f"
+    chmod 644 "$ROOT/$f"
+    echo "captured: $f"
+  done
+  echo "now review and commit in $DOTFILES"
+  ;;
+restore)
+  # CoolerControl rewrites its config while running, so stop it first or the
+  # daemon will overwrite what we just put back.
+  for f in "${FILES[@]}"; do
+    [[ -e "$ROOT/$f" ]] || { echo "skip (not captured): $f"; continue; }
+    if [[ $f == etc/coolercontrol/* ]]; then
+      sudo systemctl stop coolercontrold.service || true
+    fi
+    sudo install -m 644 -o root -g root "$ROOT/$f" "/$f"
+    echo "restored: /$f"
+    if [[ $f == etc/coolercontrol/* ]]; then
+      sudo systemctl start coolercontrold.service
+    fi
+  done
+  ;;
+-h|--help) usage 0 ;;
+*) usage 1 ;;
+esac

@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+#
+# thermal-log -- sample CPU/GPU temps, GPU power and every case/CPU fan to CSV.
+#
+#   thermal-log [seconds] [outfile]
+#
+# Defaults to 30 minutes. Intended for validating CoolerControl fan curves
+# under a real workload (a game, a long compile) rather than a synthetic
+# stress test -- see docs/thermals.md for why that distinction matters here.
+#
+# Columns: t,cpu_c,gpu_c,gpu_w,gpu_util,gpu_fan,fanN_rpm,fanN_duty
+# Fan duty is percent (0-100); the kernel exposes 0-255, converted here.
+set -uo pipefail
+
+case "${1:-}" in -h|--help) sed -n '3,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;; esac
+
+DUR="${1:-1800}"
+OUT="${2:-$HOME/thermal-$(date +%Y%m%d-%H%M%S).csv}"
+
+hwmon_by_name() {
+  local n
+  for d in /sys/class/hwmon/hwmon*; do
+    n=$(cat "$d/name" 2>/dev/null) || continue
+    [[ $n == "$1" ]] && { echo "$d"; return 0; }
+  done
+  return 1
+}
+
+H=$(hwmon_by_name nct6791) || { echo "nct6791 hwmon not found (is nct6775 loaded?)" >&2; exit 1; }
+C=$(hwmon_by_name coretemp) || { echo "coretemp hwmon not found" >&2; exit 1; }
+
+# Which fan headers actually have a tach reading.
+FANS=()
+for i in 1 2 3 4 5; do
+  [[ -r "$H/fan${i}_input" ]] && (( $(cat "$H/fan${i}_input") > 0 )) && FANS+=("$i")
+done
+(( ${#FANS[@]} )) || { echo "no spinning fans detected" >&2; exit 1; }
+
+hdr="t,cpu_c,gpu_c,gpu_w,gpu_util,gpu_fan"
+for i in "${FANS[@]}"; do hdr+=",fan${i}_rpm,fan${i}_duty"; done
+echo "$hdr" > "$OUT"
+
+echo "logging fans ${FANS[*]} -> $OUT for ${DUR}s (ctrl-c to stop early)"
+start=$SECONDS
+while (( SECONDS - start < DUR )); do
+  cpu=$(( $(cat "$C/temp1_input") / 1000 ))
+  gt=""; gw=""; gu=""; gf=""
+  if command -v nvidia-smi >/dev/null 2>&1; then
+    read -r gt gw gu gf < <(nvidia-smi \
+      --query-gpu=temperature.gpu,power.draw,utilization.gpu,fan.speed \
+      --format=csv,noheader,nounits 2>/dev/null | tr -d ' ' | tr ',' ' ')
+  fi
+  row="$((SECONDS-start)),$cpu,${gt:-},${gw:-},${gu:-},${gf:-}"
+  for i in "${FANS[@]}"; do
+    p=$(cat "$H/pwm${i}" 2>/dev/null)
+    row+=",$(cat "$H/fan${i}_input" 2>/dev/null),$(( ${p:-0} * 100 / 255 ))"
+  done
+  echo "$row" >> "$OUT"
+  sleep 3
+done
+echo "done: $OUT"
