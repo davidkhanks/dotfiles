@@ -58,3 +58,27 @@ o.bind("SUPER + SHIFT + H", "Swap window to the left", hl.dsp.window.swap({ dire
 o.bind("SUPER + SHIFT + J", "Swap window down", hl.dsp.window.swap({ direction = "d" }))
 o.bind("SUPER + SHIFT + K", "Swap window up", hl.dsp.window.swap({ direction = "u" }))
 o.bind("SUPER + SHIFT + L", "Swap window to the right", hl.dsp.window.swap({ direction = "r" }))
+
+-- ---------------------------------------------------------------------------
+-- Middle click does nothing
+-- ---------------------------------------------------------------------------
+-- The trackpad is a mechanical clickpad that reports only BTN_LEFT; it has no
+-- BTN_RIGHT or BTN_MIDDLE in hardware. libinput's clickfinger_behavior
+-- synthesises those from the finger count at the moment the switch closes:
+-- 1 finger = left, 2 = right, 3 = middle. So resting three fingers while
+-- pressing -- easy to do mid-swipe -- fires a middle click, and middle click
+-- is primary-selection paste, which dumps text into whatever has focus.
+--
+-- libinput offers no way to drop just the 3-finger mapping. clickfinger_button_map
+-- is not in this Hyprland build, and turning clickfinger_behavior off would
+-- take two-finger right-click with it. Binding the button is the surgical
+-- option: binds:pass_mouse_when_bound defaults to false, so a bound mouse
+-- button is swallowed by the compositor and never reaches the application.
+-- A Lua function that does nothing is the cheapest possible handler -- no
+-- process is spawned, unlike an `exec true`.
+--
+-- CAVEAT: Hyprland binds are not per-device, so this also disables the middle
+-- button on any external mouse -- including middle-click-to-close-tab and
+-- middle-click-to-open-link-in-new-tab in browsers. Delete this block to get
+-- both back.
+hl.bind("mouse:274", function() end, { mouse = true })
