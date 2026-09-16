@@ -36,6 +36,7 @@ own without re-answering every run.
 | `slack` | `slack-desktop`, the Wayland desktop entry, MIME database |
 | `airpods` | third-party shell plugin plus its compiled `librepods` daemon |
 | `hyprmoncfg` | third-party plugin + AUR binary for auto-switching monitor profiles |
+| `omasettings` | third-party settings GUI for Omarchy config |
 | `work_repos` | `age` tooling, decrypting the manifest, cloning the repos |
 | `work_setup` | dev environment: local tools, worktrees, container homes, images |
 | `nvim_default` | symlink `~/.config/nvim` at this config |
@@ -174,11 +175,20 @@ git diff --cached    # after staging, read it before pushing
 
 ## Gotchas worth knowing
 
-**Omarchy commands write through symlinks.** `omarchy branding screensaver
-reset` does a plain `cp` over `~/.config/omarchy/branding/screensaver.txt`,
-which is now a symlink into this repo — so it overwrites the repo file. Same
-for `omarchy refresh config hypr/bindings.lua`. Recoverable with git, but do
-not reach for them casually.
+**Things write through our symlinks.** Several stowed files are edited by
+tooling that does not know they are symlinks into this repo, so writes land
+here rather than only in `~`:
+
+| What | Writes to |
+|---|---|
+| `omarchy branding screensaver reset` | `omarchy/.config/omarchy/branding/screensaver.txt` |
+| `omarchy refresh config hypr/bindings.lua` | `hypr/.config/hypr/bindings.lua` |
+| **OmaSettings** (settings GUI) | `hypr/bindings.lua`, `hypr/looknfeel.lua`, `.tmux.conf`, `.bashrc` |
+
+The `omarchy` commands *overwrite* with defaults, which is destructive —
+recoverable with git, but do not reach for them casually. OmaSettings makes
+targeted edits, which is arguably what you want (they get tracked), but expect
+`git status` to be dirty after using it.
 
 **`~/.config/nvim` is a symlink to `davidkhanks-nvim`.** The nvim package
 installs to `~/.config/davidkhanks-nvim`; bootstrap links `~/.config/nvim` at

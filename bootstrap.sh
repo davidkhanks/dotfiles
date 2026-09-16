@@ -61,6 +61,12 @@ AUR_COOLERCONTROL=(coolercontrol-bin)
 # Monitor profiles keyed on make/model/serial rather than port, re-applied on
 # hotplug, lid events and resume. The plugin is pure QML, but it drives an
 # external hyprmoncfg binary, so the AUR package must exist before it is useful.
+# A settings GUI covering Hyprland, keybindings, tmux and more. Self-contained
+# QML plus its own bin/, so no external package. Note it edits config files that
+# this repo stows -- see the symlink caveat in README.md.
+OMASETTINGS_PLUGIN_URL="https://github.com/twiking/omasettings.git"
+OMASETTINGS_PLUGIN_ID="io.github.twiking.omasettings"
+
 HYPRMONCFG_PLUGIN_URL="https://github.com/crmne/omarchy-hyprmoncfg.git"
 HYPRMONCFG_PLUGIN_ID="crmne.hyprmoncfg"
 AUR_HYPRMONCFG=(hyprmoncfg)
@@ -100,7 +106,7 @@ HOST_FILES=(
 # different things (no fan control on a laptop, for instance), and neither
 # should have to re-answer the prompts on every run.
 BOOTSTRAP_CONF="${BOOTSTRAP_CONF:-$DOTFILES_DIR/bootstrap.conf}"
-MODULE_KEYS=(yubikey coolercontrol slack airpods hyprmoncfg work_repos work_setup nvim_default nvim_sync)
+MODULE_KEYS=(yubikey coolercontrol slack airpods hyprmoncfg omasettings work_repos work_setup nvim_default nvim_sync)
 declare -A MODULE_ENABLED=()
 
 module_desc() {
@@ -110,6 +116,7 @@ module_desc() {
     slack)         echo "Slack desktop app with Wayland flags" ;;
     airpods)       echo "AirPods bar widget (third-party shell plugin + compiled daemon)" ;;
     hyprmoncfg)    echo "Monitor profiles that auto-switch on hotplug (third-party plugin)" ;;
+    omasettings)   echo "GUI settings window for Omarchy config (third-party plugin)" ;;
     work_repos)    echo "Clone work repositories (age-encrypted manifest)" ;;
     work_setup)    echo "Prepare the work dev environment (tools, worktrees, containers)" ;;
     nvim_default)  echo "Make this Neovim config the default (~/.config/nvim)" ;;
@@ -637,6 +644,29 @@ step_yubikey_ssh() {
   fi
 }
 
+step_omasettings() {
+  enabled omasettings || return 0
+  section "Settings GUI"
+
+  local dir="$HOME/.config/omarchy/plugins/$OMASETTINGS_PLUGIN_ID"
+  if [[ -d "$dir" ]]; then
+    ok "plugin present"
+  elif ! have omarchy; then
+    skip "omarchy not available"
+    return 0
+  elif acting "add plugin from $OMASETTINGS_PLUGIN_URL"; then
+    # Third-party QML with a service kind, so it runs inside the shell process
+    # continuously. Opt-in on purpose.
+    omarchy plugin add "$OMASETTINGS_PLUGIN_URL" --enable --yes && changed "plugin added" \
+      || fail "plugin add failed"
+  fi
+
+  note "OmaSettings edits Omarchy config files, several of which are symlinks
+     into this repo (hypr/bindings.lua, hypr/looknfeel.lua, .tmux.conf,
+     .bashrc). Changes made in its UI land in the repo, so expect git status
+     to be dirty after using it. A new plugin needs 'omarchy restart shell'."
+}
+
 step_hyprmoncfg() {
   enabled hyprmoncfg || return 0
   section "Monitor profile manager"
@@ -1090,6 +1120,7 @@ main() {
   step_services
   step_airpods
   step_hyprmoncfg
+  step_omasettings
   step_yubikey_ssh
   step_ssh_agent
   step_work_repos

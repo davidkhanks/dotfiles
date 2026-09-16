@@ -74,9 +74,12 @@ Several stowed files are targets of Omarchy commands that do a plain `cp`:
 |---|---|
 | `omarchy branding screensaver reset` | `omarchy/.config/omarchy/branding/screensaver.txt` |
 | `omarchy refresh config hypr/bindings.lua` | `hypr/.config/hypr/bindings.lua` |
+| OmaSettings GUI (third-party plugin) | `hypr/bindings.lua`, `hypr/looknfeel.lua`, `.tmux.conf`, `.bashrc` |
 
-They land in the repo, not just in `~`. Recoverable with git, but flag it before
-suggesting either.
+They land in the repo, not just in `~`. The `omarchy` commands overwrite with
+defaults (destructive -- flag before suggesting either). OmaSettings makes
+targeted edits, so a dirty working tree after the user opens it is expected
+rather than a problem.
 
 ## This repo is public
 
