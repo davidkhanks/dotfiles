@@ -1,0 +1,32 @@
+#!/bin/bash
+# Live-reload the colorscheme in already-running Neovim instances when the
+# Omarchy theme changes. Newly launched instances pick the theme up on their
+# own via lua/davidkhanks/plugins/colorscheme.lua.
+#
+# Caveat: if the new theme's colorscheme plugin has never been installed, a
+# running instance cannot switch to it (the plugin is not on disk yet). Restart
+# nvim and lazy.nvim will install it.
+
+set -uo pipefail
+
+spec="$HOME/.local/state/omarchy/current/theme/neovim.lua"
+[[ -r "$spec" ]] || exit 0
+
+# Pull the colorscheme name out of the LazyVim opts block, e.g.
+#   colorscheme = "tokyonight-night"
+scheme=$(sed -n 's/.*colorscheme[[:space:]]*=[[:space:]]*"\([^"]\{1,\}\)".*/\1/p' "$spec" | head -1)
+[[ -n "$scheme" ]] || exit 0
+
+# The name is interpolated into a remote expression below, so keep it boring.
+[[ "$scheme" =~ ^[A-Za-z0-9_.-]+$ ]] || exit 0
+
+runtime="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+shopt -s nullglob
+
+for sock in "$runtime"/nvim.*; do
+  [[ -S "$sock" ]] || continue
+  # --remote-expr evaluates without disturbing the editor's current mode.
+  # --remote-send would type the keys into whatever mode is active.
+  nvim --server "$sock" --remote-expr "execute('silent! colorscheme ${scheme}')" \
+    >/dev/null 2>&1 || true
+done
