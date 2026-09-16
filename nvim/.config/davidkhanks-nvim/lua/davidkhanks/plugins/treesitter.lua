@@ -1,5 +1,10 @@
 return {
 	"nvim-treesitter/nvim-treesitter",
+	-- Pin to master: the `main` branch is the rewrite, which drops
+	-- `nvim-treesitter.configs` and breaks the config below. Without an
+	-- explicit branch, lazy.nvim clones the default branch (now `main`)
+	-- and cannot reach the pinned commit.
+	branch = "master",
 	commit = "92725df6222614307c4712eb9982e5287f21aa11",
 	event = { "BufReadPre", "BufNewFile" },
 	build = ":TSUpdate",

@@ -1,6 +1,8 @@
 return {
 	"nvim-telescope/telescope.nvim",
-	-- branch = "0.1.x",
+	-- Required: the pinned commit below lives only on 0.1.x, so without
+	-- this lazy.nvim clones the default branch and cannot reach it.
+	branch = "0.1.x",
 	commit = "a0bbec21143c7bc5f8bb02e0005fa0b982edc026",
 	dependencies = {
 		{ "nvim-lua/plenary.nvim", commit = "2d9b06177a975543726ce5c73fca176cedbffe9d" },
