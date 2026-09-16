@@ -53,7 +53,9 @@ return {
 		-- configure lualine with modified theme
 		lualine.setup({
 			options = {
-				theme = my_lualine_theme,
+				-- Follow the active colorscheme (see plugins/colorscheme.lua),
+				-- which Omarchy drives via its theme-set hook.
+				theme = "auto",
 			},
 			sections = {
 				lualine_c = {
