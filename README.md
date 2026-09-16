@@ -34,6 +34,7 @@ own without re-answering every run.
 | `yubikey` | libfido2/ykman/pcscd, `~/.ssh/config`, public key export |
 | `coolercontrol` | `coolercontrol-bin`, `nct6775`, the daemon, `hosts/<host>/` config |
 | `slack` | `slack-desktop`, the Wayland desktop entry, MIME database |
+| `brave` | Brave via Omarchy's installer, set as the default browser |
 | `airpods` | third-party shell plugin plus its compiled `librepods` daemon |
 | `hyprmoncfg` | third-party plugin + AUR binary for auto-switching monitor profiles |
 | `omasettings` | third-party settings GUI for Omarchy config |

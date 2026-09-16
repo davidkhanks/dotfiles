@@ -64,6 +64,12 @@ AUR_COOLERCONTROL=(coolercontrol-bin)
 # A settings GUI covering Hyprland, keybindings, tmux and more. Self-contained
 # QML plus its own bin/, so no external package. Note it edits config files that
 # this repo stows -- see the symlink caveat in README.md.
+# Brave via Omarchy's own installer rather than a bare AUR install: it also
+# sets up /etc/brave/policies/managed, copies Omarchy's chromium flags to
+# ~/.config/brave-flags.conf, installs the copy-url and yt-dlp native messaging
+# hosts, and applies the current theme to the browser.
+BRAVE_DESKTOP_ID="brave-browser.desktop"
+
 OMASETTINGS_PLUGIN_URL="https://github.com/twiking/omasettings.git"
 OMASETTINGS_PLUGIN_ID="io.github.twiking.omasettings"
 
@@ -106,7 +112,7 @@ HOST_FILES=(
 # different things (no fan control on a laptop, for instance), and neither
 # should have to re-answer the prompts on every run.
 BOOTSTRAP_CONF="${BOOTSTRAP_CONF:-$DOTFILES_DIR/bootstrap.conf}"
-MODULE_KEYS=(yubikey coolercontrol slack airpods hyprmoncfg omasettings work_repos work_setup nvim_default nvim_sync)
+MODULE_KEYS=(yubikey coolercontrol slack brave airpods hyprmoncfg omasettings work_repos work_setup nvim_default nvim_sync)
 declare -A MODULE_ENABLED=()
 
 module_desc() {
@@ -114,6 +120,7 @@ module_desc() {
     yubikey)       echo "YubiKey PIV SSH (libfido2, pcscd, ssh config, key export)" ;;
     coolercontrol) echo "CoolerControl fan curves (nct6775 module, daemon, host config)" ;;
     slack)         echo "Slack desktop app with Wayland flags" ;;
+    brave)         echo "Brave browser, set as the default" ;;
     airpods)       echo "AirPods bar widget (third-party shell plugin + compiled daemon)" ;;
     hyprmoncfg)    echo "Monitor profiles that auto-switch on hotplug (third-party plugin)" ;;
     omasettings)   echo "GUI settings window for Omarchy config (third-party plugin)" ;;
@@ -644,6 +651,37 @@ step_yubikey_ssh() {
   fi
 }
 
+step_brave() {
+  enabled brave || return 0
+  section "Brave browser"
+
+  if ! have omarchy; then
+    skip "omarchy not available"
+    return 0
+  fi
+
+  if have brave; then
+    ok "brave installed"
+  elif acting "install brave (AUR build)"; then
+    # Interactive: omarchy-install-browser shells out to yay, which must not
+    # run as root and will prompt for a sudo password.
+    omarchy install browser brave && changed "brave installed" || fail "brave install failed"
+  fi
+
+  # omarchy-launch-webapp switches on the xdg default and accepts brave*, so
+  # setting this also moves every Omarchy webapp over.
+  local current
+  current="$(env -u BROWSER xdg-settings get default-web-browser 2>/dev/null)"
+  if [[ "$current" == "$BRAVE_DESKTOP_ID" ]]; then
+    ok "brave is the default browser"
+  elif ! have brave; then
+    skip "cannot set default until brave is installed"
+  elif acting "set brave as the default browser (currently ${current:-unset})"; then
+    omarchy default browser brave && changed "brave set as default browser" \
+      || fail "could not set default browser"
+  fi
+}
+
 step_omasettings() {
   enabled omasettings || return 0
   section "Settings GUI"
@@ -1118,6 +1156,7 @@ main() {
   step_kernel_modules
   step_host_files
   step_services
+  step_brave
   step_airpods
   step_hyprmoncfg
   step_omasettings
