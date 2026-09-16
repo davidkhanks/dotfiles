@@ -144,6 +144,26 @@ checks for a loaded credential profile before building images or starting
 containers. Without one it prints what to run and exits cleanly, so a fresh
 machine still gets fully prepared in one pass.
 
+## Own shell plugins
+
+Plugins written here (as opposed to the third-party ones the modules install)
+live in the `omarchy` stow package under
+`.config/omarchy/plugins/<user>.<name>/`. Currently that is a screenshot
+button: left-click captures a region, right-click captures fullscreen.
+
+Stow ships the files, but whether a plugin is *enabled* and where it sits in
+the bar lives in `shell.json`, which is not tracked — Omarchy rewrites it
+whenever you use `omarchy bar` or the settings UI. `bootstrap.sh` closes that
+gap by enabling anything matching the `<user>.` id prefix, so a new plugin is
+picked up just by being stowed.
+
+Writing one: model it on a first-party widget in
+`/usr/share/omarchy/shell/plugins/bar/widgets/`, then
+`omarchy plugin validate <dir>` before enabling. Note `BarIconButton` has no
+`acceptedButtons` property — its base `WidgetButton` already accepts
+left/right/middle and emits `pressed(int button)`. A new plugin needs
+`omarchy restart shell` before it renders; edits to an existing one hot-reload.
+
 ## Docs
 
 - [`docs/thermals.md`](docs/thermals.md) — fan topology, sensor traps, curve design

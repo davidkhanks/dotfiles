@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "davidkhanks.screenshot",
+  "name": "Screenshot",
+  "version": "1.0.0",
+  "author": "davidkhanks",
+  "description": "Take a screenshot from the bar",
+  "kinds": ["bar-widget"],
+  "entryPoints": { "barWidget": "Screenshot.qml" },
+  "barWidget": {
+    "displayName": "Screenshot",
+    "description": "Click to capture a region; right-click for fullscreen.",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}

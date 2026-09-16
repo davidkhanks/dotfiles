@@ -664,6 +664,35 @@ step_yubikey_ssh() {
   fi
 }
 
+step_own_plugins() {
+  section "Own shell plugins"
+
+  # Plugins we author ourselves ship as files in the omarchy stow package, but
+  # whether a plugin is enabled and where it sits in the bar lives in
+  # shell.json, which is not tracked (Omarchy rewrites it constantly). So the
+  # files arrive via stow and this enables them.
+  #
+  # Matched by the "<user>." id prefix rather than a hardcoded list, so a new
+  # one is picked up just by being stowed.
+  if ! have omarchy; then
+    skip "omarchy not available"
+    return 0
+  fi
+
+  local dir id found=0
+  for dir in "$HOME/.config/omarchy/plugins/$USER".*; do
+    [[ -d "$dir" ]] || continue
+    found=1
+    id="$(basename "$dir")"
+    if omarchy plugin list 2>/dev/null | grep -qE "^${id}[[:space:]]+enabled"; then
+      ok "$id enabled"
+    elif acting "enable $id"; then
+      omarchy plugin enable "$id" right && changed "enabled $id" || fail "could not enable $id"
+    fi
+  done
+  (( found )) || skip "none stowed"
+}
+
 step_webapps() {
   enabled webapps || return 0
   section "Web apps"
@@ -1216,6 +1245,7 @@ main() {
   step_services
   step_brave
   step_webapps
+  step_own_plugins
   step_airpods
   step_hyprmoncfg
   step_omasettings
