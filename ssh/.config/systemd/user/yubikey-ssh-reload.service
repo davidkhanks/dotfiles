@@ -1,0 +1,15 @@
+[Unit]
+Description=Reload YubiKey PKCS#11 module into ssh-agent on insert
+
+[Service]
+Type=oneshot
+Environment=SSH_AUTH_SOCK=%t/ssh-agent.sock
+Environment=SSH_ASKPASS=/usr/bin/lxqt-openssh-askpass
+# force skips ssh-add's "is there a tty" heuristics, which never fire here.
+Environment=SSH_ASKPASS_REQUIRE=force
+# Pull the display vars from the live session rather than hardcoding
+# WAYLAND_DISPLAY=wayland-1, which breaks if the compositor restarts.
+ExecStartPre=/usr/bin/systemctl --user import-environment DISPLAY WAYLAND_DISPLAY XAUTHORITY
+# -e drops the stale session handle; 2>/dev/null swallows "no such module" on
+# the very first insert.
+ExecStart=/bin/sh -c '/usr/bin/ssh-add -e /usr/lib/libykcs11.so 2>/dev/null; /usr/bin/ssh-add -s /usr/lib/libykcs11.so'

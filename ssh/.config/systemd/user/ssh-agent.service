@@ -1,0 +1,18 @@
+[Unit]
+Description=SSH agent (persistent, PKCS#11 whitelisted)
+
+[Service]
+Type=simple
+# -P whitelists the PKCS#11 modules ssh-add may load. Without it modern
+# OpenSSH refuses `ssh-add -s` outright. The wildcard matters: libykcs11.so is
+# a symlink to libykcs11.so.2.7.3 and OpenSSH canonicalises before matching.
+# The three paths cover Arch, Debian/Ubuntu and Fedora in one line.
+# NOTE: the wildcard must be AFTER .so, not before it. A `libykcs11*.so`
+# pattern cannot match Arch's real file
+# /usr/lib/libykcs11.so.2.7.3 -- ssh-add then fails with
+# "agent refused operation" even though the PIN was correct.
+ExecStart=/usr/bin/ssh-agent -D -a %t/ssh-agent.sock -P "/usr/lib/libykcs11.so*,/usr/lib/x86_64-linux-gnu/libykcs11.so*,/usr/lib64/libykcs11.so*"
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,44 @@
+# Omarchy environment (OMARCHY_PATH + PATH), needed even for non-interactive shells
+[[ -r /usr/share/omarchy/default/bash/env-bootstrap ]] && source /usr/share/omarchy/default/bash/env-bootstrap
+
+# If not running interactively, don't do anything else (leave this above the rc source)
+[[ $- != *i* ]] && return
+
+# All the default Omarchy aliases and functions
+# (don't mess with these directly, just overwrite them here!)
+source "$OMARCHY_PATH/default/bash/rc"
+
+# Add your own exports, aliases, and functions here.
+#
+# Make an alias for invoking commands you use constantly
+# alias p='python'
+
+# --- YubiKey ssh-agent -------------------------------------------------------
+# PIV slot 9A is PIN-NEVER / TOUCH-CACHED, so the key itself only wants a touch.
+# The PIN prompt comes from the PKCS#11 layer logging into the token. Loading
+# the provider into a long-lived agent means that PIN is entered once per login
+# instead of once per git operation.
+#
+#   ssh-add -s /usr/lib/libykcs11.so   # once per login: PIN, then touch per use
+#   ssh-add -L                         # what the agent currently holds
+#   ssh-add -e /usr/lib/libykcs11.so   # unload (e.g. after unplugging)
+export SSH_AUTH_SOCK="${XDG_RUNTIME_DIR:-/run/user/$UID}/ssh-agent.sock"
+export SSH_ASKPASS=/usr/bin/lxqt-openssh-askpass
+
+# Reload the PKCS#11 module after unplugging/replugging the YubiKey. The agent
+# keeps a stale PIV session handle otherwise and signing fails with
+# "agent refused operation". The udev rule + yubikey-ssh-reload.service do this
+# automatically on insert; this is the manual equivalent.
+yk-reload() {
+  local lib=/usr/lib/libykcs11.so
+  ssh-add -e "$lib" 2>/dev/null
+  ssh-add -s "$lib"
+}
+
+# --- aegis ------------------------------------------------------------------
+# Encrypted env-var profiles unlocked by the YubiKey. The hook wraps `aegis` so
+# load/unload can modify the current shell's environment.
+#   aegis list            what profiles exist
+#   aegis load <profile>  export its vars into this shell (touch)
+#   aegis status          what is loaded and when it expires
+command -v aegis >/dev/null 2>&1 && eval "$(aegis shell-init bash)"
