@@ -70,6 +70,18 @@ AUR_COOLERCONTROL=(coolercontrol-bin)
 # hosts, and applies the current theme to the browser.
 BRAVE_DESKTOP_ID="brave-browser.desktop"
 
+# Web apps to create launchers for, as name|url|icon-url. Only apps added by
+# hand belong here -- Omarchy's own defaults (HEY, Basecamp, ...) come back on
+# a fresh install by themselves.
+#
+# The icon URL is explicit because omarchy-webapp-install only auto-fetches
+# icons in its interactive mode, and the conventional /apple-touch-icon.png
+# does not work for every site (linear.app serves HTML there; the real icon is
+# under /static/ with a cache-busting query string).
+WEBAPPS=(
+  "Linear|https://linear.app|https://linear.app/static/apple-touch-icon.png?v=2"
+)
+
 OMASETTINGS_PLUGIN_URL="https://github.com/twiking/omasettings.git"
 OMASETTINGS_PLUGIN_ID="io.github.twiking.omasettings"
 
@@ -112,7 +124,7 @@ HOST_FILES=(
 # different things (no fan control on a laptop, for instance), and neither
 # should have to re-answer the prompts on every run.
 BOOTSTRAP_CONF="${BOOTSTRAP_CONF:-$DOTFILES_DIR/bootstrap.conf}"
-MODULE_KEYS=(yubikey coolercontrol slack brave airpods hyprmoncfg omasettings work_repos work_setup nvim_default nvim_sync)
+MODULE_KEYS=(yubikey coolercontrol slack brave webapps airpods hyprmoncfg omasettings work_repos work_setup nvim_default nvim_sync)
 declare -A MODULE_ENABLED=()
 
 module_desc() {
@@ -121,6 +133,7 @@ module_desc() {
     coolercontrol) echo "CoolerControl fan curves (nct6775 module, daemon, host config)" ;;
     slack)         echo "Slack desktop app with Wayland flags" ;;
     brave)         echo "Brave browser, set as the default" ;;
+    webapps)       echo "Web app launchers for sites with no Linux desktop app" ;;
     airpods)       echo "AirPods bar widget (third-party shell plugin + compiled daemon)" ;;
     hyprmoncfg)    echo "Monitor profiles that auto-switch on hotplug (third-party plugin)" ;;
     omasettings)   echo "GUI settings window for Omarchy config (third-party plugin)" ;;
@@ -651,6 +664,51 @@ step_yubikey_ssh() {
   fi
 }
 
+step_webapps() {
+  enabled webapps || return 0
+  section "Web apps"
+
+  if ! have omarchy; then
+    skip "omarchy not available"
+    return 0
+  fi
+
+  local apps_dir="$HOME/.local/share/applications"
+  local icon_dir="$HOME/.local/share/icons/hicolor/256x256/apps"
+  local spec name url icon icon_ref
+
+  for spec in "${WEBAPPS[@]}"; do
+    IFS='|' read -r name url icon <<<"$spec"
+    if [[ -f "$apps_dir/$name.desktop" ]]; then
+      ok "$name present"
+      continue
+    fi
+    acting "install $name web app" || continue
+
+    # Fetch the icon ourselves and pass it by name; fall back to handing the
+    # installer the URL and letting it try.
+    icon_ref="$url"
+    if [[ -n $icon ]]; then
+      local slug
+      slug="$(tr '[:upper:]' '[:lower:]' <<<"$name" | sed 's/[^[:alnum:]]\+/-/g; s/^-//; s/-$//')"
+      mkdir -p "$icon_dir"
+      if curl -fsSL --max-time 20 -o "$icon_dir/$slug.png" "$icon" 2>/dev/null \
+         && [[ "$(file -b --mime-type "$icon_dir/$slug.png" 2>/dev/null)" == image/* ]]; then
+        gtk-update-icon-cache "$HOME/.local/share/icons/hicolor" &>/dev/null || true
+        icon_ref="$slug"
+      else
+        rm -f "$icon_dir/$slug.png"
+      fi
+    fi
+
+    if omarchy webapp install "$name" "$url" "$icon_ref" >/dev/null 2>&1; then
+      changed "installed $name"
+    else
+      fail "$name web app install failed"
+    fi
+  done
+}
+
 step_brave() {
   enabled brave || return 0
   section "Brave browser"
@@ -1157,6 +1215,7 @@ main() {
   step_host_files
   step_services
   step_brave
+  step_webapps
   step_airpods
   step_hyprmoncfg
   step_omasettings
