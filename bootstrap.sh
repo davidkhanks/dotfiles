@@ -594,7 +594,11 @@ step_services() {
 step_yubikey_ssh() {
   enabled yubikey || return 0
   section "YubiKey PIV SSH"
-  mkdir -p "$SSH_DIR"; chmod 700 "$SSH_DIR"
+  # No mkdir/chmod of ~/.ssh here. step_ssh_dir owns that, runs unconditionally
+  # and earlier in main(), and guards both behind acting(). Repeating it here
+  # unguarded meant --dry-run created ~/.ssh for real, against the promise at
+  # the top of this file that a dry run modifies nothing. The only write below
+  # is $SSH_PUBKEY, which is already behind acting().
 
   if ! have ykman; then
     skip "ykman not installed yet"
