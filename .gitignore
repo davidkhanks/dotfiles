@@ -1,0 +1,52 @@
+# This repo is PUBLIC. Nothing secret or machine-identifying belongs here.
+
+# Backups left by stow conflicts, omarchy refresh, and our own scripts
+*.bak
+*.bak.*
+*.old
+*~
+
+# SSH: config is tracked deliberately; nothing else here is safe.
+ssh/.ssh/*
+!ssh/.ssh/config
+known_hosts
+known_hosts.*
+
+# Key material of any kind, in case one is ever dropped in the tree
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ecdsa*
+id_ed25519*
+*_rsa
+*_ecdsa
+*_ed25519
+
+# Environment / credential files
+.env
+.env.*
+*.credentials
+.netrc
+
+# thermal-log output
+*.csv
+
+# Editor and OS noise
+.DS_Store
+*.swp
+
+# Work repo manifests: PLAINTEXT never belongs in this public repo.
+# The age-encrypted copy under secrets/ is the whole point, so allow that.
+work-repos
+work-repos.*
+!secrets/*.age
+
+# age: ciphertext is committed; decrypted copies and key material are not
+secrets/*.decrypted
+*.age.txt
+age-backup-key.txt
+
+# Per-machine module selection -- each machine keeps its own
+bootstrap.conf
