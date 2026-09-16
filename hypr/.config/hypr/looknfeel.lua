@@ -13,6 +13,24 @@
 --   },
 -- })
 
+-- Tighten both gaps to 4 visible pixels (Omarchy ships 10 and 5).
+--
+-- The two are not measured the same way, which is why the numbers differ:
+--   gaps_out is the whole margin from a window to the screen edge, so 4 -> 4px.
+--   gaps_in is applied to EACH window's edge, so the space between two
+--   neighbours is 2 x gaps_in. Omarchy's 5 is what shows up as the 10px
+--   between windows; 2 gives 4.
+--
+-- Borders sit outside the geometry Hyprland reports, so `hyprctl clients`
+-- shows 2 x border_size (4px) more than the eye sees: a 4px visual gap reads
+-- as 8 between window origins.
+hl.config({
+  general = {
+    gaps_out = 4,
+    gaps_in = 2,
+  },
+})
+
 -- https://wiki.hypr.land/Configuring/Basics/Variables/#decoration
 hl.config({
   decoration = {
