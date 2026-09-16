@@ -964,8 +964,16 @@ step_work_repos() {
     skip "no work-repo manifest (plaintext or .age)"
     return 0
   fi
-  # Shred the decrypted copy however this function exits.
-  [[ -n $tmp_manifest ]] && trap 'rm -f "$tmp_manifest"' RETURN
+  # Shred the decrypted copy however this function exits. The trap must disarm
+  # itself: a RETURN trap set inside a function is global, not function-local,
+  # so it survives this return and fires again when `main` returns -- by which
+  # point $tmp_manifest is out of scope and `set -u` aborts the script with
+  # "tmp_manifest: unbound variable" after the summary has already printed.
+  # `if` rather than `&&`: when the manifest is plaintext the test is false,
+  # and a bare failing AND-list is exactly the `set -e` landmine in CLAUDE.md.
+  if [[ -n $tmp_manifest ]]; then
+    trap 'rm -f "${tmp_manifest:-}"; trap - RETURN' RETURN
+  fi
 
   local root="" url dir line
   local -a pending=()
@@ -978,6 +986,13 @@ step_work_repos() {
       continue
     fi
     [[ -n $root ]] || { fail "manifest sets a repo before 'root'"; return 0; }
+    # Only URL-shaped lines name a repository. Every other keyword is a
+    # directive consumed by parse_work_manifest (tool, shared, pinfile,
+    # worktree, devhome, settings, image, services, credtool); without this
+    # guard they are read as "<url> <dirname>" and the step tries to clone
+    # them, failing with "repository 'tool' does not exist". Same test as
+    # parse_work_manifest uses, so the two agree on the grammar.
+    [[ $a == *:* || $a == git@* || $a == http* ]] || continue
     url="$a"
     dir="${b:-$(basename "${url%.git}")}"
     if [[ -d "$root/$dir/.git" ]]; then
