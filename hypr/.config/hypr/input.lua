@@ -6,7 +6,7 @@
 -- needs it.
 hl.config({
   input = {
-    sensitivity = -0.2,
+    sensitivity = -0.3,
   },
 })
 
