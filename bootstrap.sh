@@ -82,6 +82,26 @@ WEBAPPS=(
   "Linear|https://linear.app|https://linear.app/static/apple-touch-icon.png?v=2"
 )
 
+# Bar widget properties. These live in ~/.config/omarchy/shell.json, which is
+# deliberately NOT tracked -- Omarchy rewrites it on every `omarchy bar`
+# command and from the settings UI -- so anything worth keeping is reapplied
+# from here instead of stowed. Same gap `step_own_plugins` closes for whether a
+# plugin is enabled.
+#
+# Format: <widget-id>|<key>|<json-value>. The value is JSON, and is passed with
+# --json, so a string needs its quotes and can carry escapes: verticalFormat is
+# four stacked lines and would be unwriteable as a bare shell word.
+#
+# The clock formats are Qt's (Qt.formatDateTime), not strftime: "h" is the
+# 12-hour hour but ONLY when AP is present, and "HH" is always 24-hour. These
+# two are Omarchy's own presets, the 12-hour twins of the stock defaults.
+# The vertical one is unused while the bar is horizontal; it is set so that
+# moving the bar to a side does not quietly restore a 24-hour clock.
+BAR_SETTINGS=(
+  'omarchy.clock|format|"dddd h:mm AP"'
+  'omarchy.clock|verticalFormat|"h\n—\nmm\nAP"'
+)
+
 OMASETTINGS_PLUGIN_URL="https://github.com/twiking/omasettings.git"
 OMASETTINGS_PLUGIN_ID="io.github.twiking.omasettings"
 
@@ -754,6 +774,56 @@ install_webapp() {
   fi
 }
 
+step_bar_settings() {
+  section "Bar widget settings"
+
+  if ! have omarchy; then
+    skip "omarchy not available"
+    return 0
+  fi
+  # jq is a hard dependency of the omarchy package, so it is present wherever
+  # `omarchy bar` is -- checked anyway rather than assumed.
+  if ! have jq; then
+    skip "jq not installed"
+    return 0
+  fi
+
+  local shell_json="$HOME/.config/omarchy/shell.json"
+  if [[ ! -r "$shell_json" ]]; then
+    skip "no shell.json yet (run the shell once first)"
+    return 0
+  fi
+
+  local spec id key json want current
+  for spec in "${BAR_SETTINGS[@]}"; do
+    IFS='|' read -r id key json <<<"$spec"
+
+    # Decode the JSON value so it can be compared with what shell.json holds.
+    if ! want="$(jq -re . <<<"$json" 2>/dev/null)"; then
+      fail "$id $key: value is not valid JSON"
+      continue
+    fi
+
+    # The widget can sit in any bar section, so search all of them rather than
+    # assuming where the user last moved it.
+    current="$(jq -r --arg id "$id" --arg key "$key" \
+      '[.. | objects | select(.id? == $id) | .[$key]?] | map(select(. != null)) | first // empty' \
+      "$shell_json" 2>/dev/null)"
+
+    if [[ "$current" == "$want" ]]; then
+      ok "$id $key"
+      continue
+    fi
+    if acting "set $id $key"; then
+      if omarchy bar set "$id" "$key" "$json" --json >/dev/null 2>&1; then
+        changed "$id $key set"
+      else
+        fail "could not set $id $key"
+      fi
+    fi
+  done
+}
+
 step_webapps() {
   enabled webapps || return 0
   section "Web apps"
@@ -1315,6 +1385,7 @@ main() {
   step_brave
   step_webapps
   step_own_plugins
+  step_bar_settings
   step_airpods
   step_hyprmoncfg
   step_omasettings

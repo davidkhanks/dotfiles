@@ -159,6 +159,21 @@ whenever you use `omarchy bar` or the settings UI. `bootstrap.sh` closes that
 gap by enabling anything matching the `<user>.` id prefix, so a new plugin is
 picked up just by being stowed.
 
+Widget *properties* have the same problem, and `BAR_SETTINGS` in
+`bootstrap.sh` closes it the same way — a list of `<widget-id>|<key>|<json>`
+reapplied on every run:
+
+```
+omarchy.clock|format|"dddd h:mm AP"
+```
+
+Today that is the 12-hour clock. Values are JSON (passed with `--json`), so a
+multi-line one like `verticalFormat` can carry `\n`. Note the clock's format
+string is Qt's, not strftime: `h` is the 12-hour hour but **only** when `AP` is
+present, and `HH` is always 24-hour. Right-clicking the clock cycles Omarchy's
+presets and writes the result back, so the bar can drift out of step with this
+list — a run puts it back.
+
 Writing one: model it on a first-party widget in
 `/usr/share/omarchy/shell/plugins/bar/widgets/`, then
 `omarchy plugin validate <dir>` before enabling. Note `BarIconButton` has no
