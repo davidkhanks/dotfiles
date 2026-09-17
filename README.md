@@ -229,6 +229,23 @@ git diff --cached    # after staging, read it before pushing
 
 ## Gotchas worth knowing
 
+**tmux loads two configs, and ours loses.** tmux's compiled-in search path is
+`/etc/tmux.conf : ~/.tmux.conf : $XDG_CONFIG_HOME/tmux/tmux.conf :
+~/.config/tmux/tmux.conf` — a *sequence*, not first-match. Omarchy ships a full
+config at the last of those, so our `~/.tmux.conf` loads **first** and anything
+Omarchy also sets silently overrides it. This bit for months unnoticed:
+`prefix k` was bound here to "resize pane up" and was actually running
+Omarchy's `kill-window`. Ours is now trimmed to only what Omarchy does not
+provide.
+
+**tpm cannot work on Omarchy.** The plugin manager discovers plugins by parsing
+exactly one config file and prefers `~/.config/tmux/tmux.conf` when it exists.
+On Omarchy that file always exists and carries no `@plugin` lines, so tpm finds
+nothing, installs nothing and exits 0 without a word — and its runtime loader
+uses the same lookup, so a hand-installed plugin is never sourced either.
+`TMUX_PLUGINS` in `bootstrap.sh` clones plugins directly and the tmux config
+`run-shell`s them, skipping tpm entirely.
+
 **Things write through our symlinks.** Several stowed files are edited by
 tooling that does not know they are symlinks into this repo, so writes land
 here rather than only in `~`:

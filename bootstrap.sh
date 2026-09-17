@@ -108,6 +108,19 @@ WEBAPPS=(
 # two are Omarchy's own presets, the 12-hour twins of the stock defaults.
 # The vertical one is unused while the bar is horizontal; it is set so that
 # moving the bar to a side does not quietly restore a 24-hour clock.
+# tmux plugins, cloned straight from git rather than through tpm.
+#
+# tpm cannot be used here: it discovers plugins by parsing exactly ONE config
+# file and prefers ~/.config/tmux/tmux.conf when it exists. Omarchy always ships
+# that file and it carries no @plugin lines, so tpm finds nothing, installs
+# nothing, and exits 0 silently -- and its runtime loader uses the same lookup,
+# so a hand-installed plugin would never be sourced either. The tmux config
+# run-shells the plugin directly; this just puts it on disk.
+TMUX_PLUGIN_DIR="${TMUX_PLUGIN_DIR:-$HOME/.tmux/plugins}"
+TMUX_PLUGINS=(
+  "https://github.com/christoomey/vim-tmux-navigator"
+)
+
 BAR_SETTINGS=(
   'omarchy.clock|format|"dddd h:mm AP"'
   'omarchy.clock|verticalFormat|"h\n—\nmm\nAP"'
@@ -787,6 +800,37 @@ install_webapp() {
   fi
 }
 
+step_tmux_plugins() {
+  section "tmux plugins"
+
+  if ! have tmux; then
+    skip "tmux not installed"
+    return 0
+  fi
+  if (( ${#TMUX_PLUGINS[@]} == 0 )); then
+    skip "none configured"
+    return 0
+  fi
+
+  local url name dir
+  for url in "${TMUX_PLUGINS[@]}"; do
+    name="$(basename "${url%.git}")"
+    dir="$TMUX_PLUGIN_DIR/$name"
+    if [[ -d "$dir/.git" ]]; then
+      ok "$name present"
+    elif [[ -e "$dir" ]]; then
+      fail "$dir exists but is not a git checkout"
+    elif acting "clone $name"; then
+      mkdir -p "$TMUX_PLUGIN_DIR"
+      if git clone --quiet "$url" "$dir"; then
+        changed "cloned $name"
+      else
+        fail "could not clone $name"
+      fi
+    fi
+  done
+}
+
 step_bar_settings() {
   section "Bar widget settings"
 
@@ -1392,6 +1436,7 @@ main() {
   step_stow
   step_desktop_db
   step_nvim_default
+  step_tmux_plugins
   step_kernel_modules
   step_host_files
   step_services
