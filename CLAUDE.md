@@ -174,3 +174,13 @@ Full detail in `docs/thermals.md` and `docs/yubikey-ssh.md`. The short version:
   until 95°C by explicit user choice, leaving 5°C to Tjmax. Needs a real
   workload logged with `thermal-log` before it can be trusted.
 - `gopls` is enabled but cannot install without the Go toolchain.
+- **Wake-on-LAN is not armed** on the laptop's USB ethernet adapter (Realtek
+  `0bda:8153`). Closing the lid on battery suspends to s2idle, and plugging in
+  AC cannot wake it — `ACAD` exposes no `wakeup` attribute at all. The only
+  working wake today is a keypress on the external USB keyboard (Massdrop ALT,
+  `04d8:eed3`), whose USB-level wakeup is already enabled, same as the LAN
+  adapter's. A magic packet would add waking the machine from another host with
+  the lid shut. Unverified whether the adapter supports it: `ethtool` is not
+  installed, so `ethtool <if> | grep Wake-on` has never been run. If it does,
+  arming it is a udev rule, and being root-owned that belongs in
+  `hosts/<hostname>/` rather than a stow package.
