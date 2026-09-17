@@ -872,14 +872,13 @@ step_herdr_navigation() {
 # Home-row workspace switching, appended to herdr's own binding lists rather
 # than bound separately, so the help popup lists them alongside the arrows.
 #
-# Alt+Shift rather than plain Alt: Alt+h/j/k/l is resize in Neovim and tmux, and
-# herdr grabs keys before the pane sees them, so a plain Alt+j here would break
-# resize inside every Neovim pane. Shift also matches herdr's own grammar, where
-# Alt+Shift+arrows already moves tabs.
+# Plain Alt is safe because resizing lives on the multiplexer's own
+# Ctrl+Alt+Shift+arrows and nothing binds Alt+h/j/k/l any more. k is up/previous
+# and j is down/next, matching vim and the Alt+arrow bindings they sit beside.
 #   <option key>|<binding to append>
 HERDR_KEY_APPENDS=(
-  "previous_workspace|alt+shift+k"
-  "next_workspace|alt+shift+j"
+  "previous_workspace|alt+k"
+  "next_workspace|alt+j"
 )
 
 step_herdr_keys() {
@@ -921,6 +920,87 @@ step_herdr_keys() {
       herdr server reload-config >/dev/null 2>&1 || true
     else
       fail "herdr rejected the edited config; check 'herdr config check'"
+    fi
+  fi
+}
+
+# Half-step pane resizing. herdr's built-in resize_pane_* moves the split by
+# 0.05 per press, which overshoots badly on a wide screen. There is no step-size
+# option, so the built-ins are commented out and the same keys are rebound to
+# the CLI with an explicit --amount.
+#
+# 0.05 is measured, not assumed: `herdr pane layout` reports the split ratio and
+# one default press moved it 0.50 -> 0.55.
+#
+# Options to comment out so their keys are free. herdr resolves a collision by
+# keeping the built-in and disabling the [[keys.command]], so without this the
+# rebinding silently does nothing -- `herdr config check` says so explicitly.
+HERDR_KEYS_DISABLE=(resize_pane_left resize_pane_down resize_pane_up resize_pane_right)
+
+#   <key>|<shell command>|<description>
+HERDR_SHELL_KEYS=(
+  "ctrl+alt+shift+left|herdr pane resize --direction left --amount 0.025 --current|resize pane left (half step)"
+  "ctrl+alt+shift+down|herdr pane resize --direction down --amount 0.025 --current|resize pane down (half step)"
+  "ctrl+alt+shift+up|herdr pane resize --direction up --amount 0.025 --current|resize pane up (half step)"
+  "ctrl+alt+shift+right|herdr pane resize --direction right --amount 0.025 --current|resize pane right (half step)"
+)
+
+step_herdr_resize() {
+  enabled herdr_nav || return 0
+  section "herdr resize step"
+
+  if ! have herdr; then
+    skip "herdr not installed"
+    return 0
+  fi
+  if [[ ! -w "$HERDR_CONFIG" ]]; then
+    skip "no writable ${HERDR_CONFIG/#$HOME/\~}"
+    return 0
+  fi
+
+  local opt spec key cmd desc conf touched=0
+
+  for opt in "${HERDR_KEYS_DISABLE[@]}"; do
+    conf="$(<"$HERDR_CONFIG")"
+    if [[ "$conf" != *$'\n'"$opt = "* && "$conf" != "$opt = "* ]]; then
+      ok "$opt already commented out"
+      continue
+    fi
+    if acting "comment out $opt"; then
+      sed -i "s|^\($opt = .*\)$|# \1   # superseded by the half-step keys.command below|" "$HERDR_CONFIG"
+      touched=1
+      changed "$opt disabled"
+    fi
+  done
+
+  for spec in "${HERDR_SHELL_KEYS[@]}"; do
+    key="${spec%%|*}"
+    cmd="${spec#*|}"; cmd="${cmd%|*}"
+    desc="${spec##*|}"
+    conf="$(<"$HERDR_CONFIG")"
+    if [[ "$conf" == *"$cmd"* ]]; then
+      ok "$key bound"
+      continue
+    fi
+    if acting "bind $key to a half-step resize"; then
+      printf '\n[[keys.command]]\nkey = "%s"\ntype = "shell"\ncommand = "%s"\ndescription = "%s"\n' \
+        "$key" "$cmd" "$desc" >> "$HERDR_CONFIG"
+      touched=1
+      changed "$key bound"
+    fi
+  done
+
+  if (( touched )); then
+    # config check reports a collision as an issue rather than a failure, so
+    # look at the text: a kept built-in means the rebinding is inert.
+    local report
+    report="$(herdr config check 2>&1 || true)"
+    if [[ "$report" == *"disabled keys.command"* ]]; then
+      fail "herdr disabled the new bindings as conflicting: $report"
+    elif herdr config check >/dev/null 2>&1; then
+      herdr server reload-config >/dev/null 2>&1 || true
+    else
+      fail "herdr rejected the edited config; run 'herdr config check'"
     fi
   fi
 }
@@ -1532,6 +1612,7 @@ main() {
   step_nvim_default
   step_herdr_navigation
   step_herdr_keys
+  step_herdr_resize
   step_kernel_modules
   step_host_files
   step_services

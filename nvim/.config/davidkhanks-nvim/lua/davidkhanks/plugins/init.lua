@@ -3,8 +3,8 @@ return {
 
 	-- Seamless navigation between Neovim splits and terminal multiplexer panes,
 	-- replacing vim-tmux-navigator. Same C-h/j/k/l, but it also speaks herdr
-	-- (Omarchy's workspace manager) and adds resize across the same boundary,
-	-- which vim-tmux-navigator never did.
+	-- (Omarchy's workspace manager). Navigation only: resizing stays on the
+	-- multiplexer's own Ctrl+Alt+Shift+arrows, so M-h/j/k/l are free.
 	--
 	-- Deliberately NOT lazy-loaded. The tmux integration works by this plugin
 	-- setting the pane-local @pane-is-vim variable on load; lazy-load it and the
@@ -26,12 +26,6 @@ return {
 			vim.keymap.set("n", "<C-k>", ss.move_cursor_up, { desc = "Move to split/pane above" })
 			vim.keymap.set("n", "<C-l>", ss.move_cursor_right, { desc = "Move to split/pane right" })
 
-			-- Resizing across the same boundary. vim-tmux-navigator had no
-			-- equivalent; these were tmux-side bindings before.
-			vim.keymap.set("n", "<M-h>", ss.resize_left, { desc = "Resize split/pane left" })
-			vim.keymap.set("n", "<M-j>", ss.resize_down, { desc = "Resize split/pane down" })
-			vim.keymap.set("n", "<M-k>", ss.resize_up, { desc = "Resize split/pane up" })
-			vim.keymap.set("n", "<M-l>", ss.resize_right, { desc = "Resize split/pane right" })
 		end,
 	},
 }

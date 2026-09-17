@@ -261,11 +261,19 @@ after Neovim has cloned it — so `herdr_nav` skips cleanly until `nvim_sync` (o
 Omarchy's untracked `~/.config/herdr/config.toml`, so `step_herdr_navigation`
 reapplies them, the same way `BAR_SETTINGS` handles `shell.json`.
 
-`HERDR_KEY_APPENDS` adds home-row workspace switching (`Alt+Shift+J/K`) by
-appending to herdr's own binding lists, so the `prefix ?` popup shows them next
-to the arrows. Note the Shift: `Alt+h/j/k/l` is resize in Neovim and tmux, and
-herdr intercepts keys before the pane sees them, so a plain `Alt+J` there would
-silently break resize inside every Neovim pane.
+`HERDR_KEY_APPENDS` adds home-row workspace switching (`Alt+J`/`Alt+K`) by
+appending to herdr's own binding lists, so the `prefix ?` popup lists them next
+to the arrows. Resizing deliberately stays on herdr's `Ctrl+Alt+Shift+arrows`,
+which is what leaves `Alt+h/j/k/l` free for this.
+
+`HERDR_KEYS_DISABLE` + `HERDR_SHELL_KEYS` halve the resize step. herdr has no
+step-size option and its built-in moves the split by `0.05` per press, so the
+built-ins are commented out and the same keys rebound to
+`herdr pane resize --amount 0.025`. The `0.05` is measured, not assumed:
+`herdr pane layout` reports the split ratio, and one default press moved it
+`0.50 -> 0.55`. Order matters — herdr resolves a key collision by keeping the
+built-in and *disabling* the override, so the keys must be freed first or the
+rebinding is silently inert.
 
 **Do not lazy-load `smart-splits.nvim`.** The tmux half depends on
 `@pane-is-vim` being set at load; lazy-load it and tmux swallows the keys
