@@ -889,6 +889,8 @@ HERDR_KEY_SETS=(
 HERDR_KEY_APPENDS=(
   "previous_workspace|alt+k"
   "next_workspace|alt+j"
+  "previous_tab|alt+h"
+  "next_tab|alt+l"
 )
 
 step_herdr_keys() {

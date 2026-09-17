@@ -261,9 +261,10 @@ after Neovim has cloned it — so `herdr_nav` skips cleanly until `nvim_sync` (o
 Omarchy's untracked `~/.config/herdr/config.toml`, so `step_herdr_navigation`
 reapplies them, the same way `BAR_SETTINGS` handles `shell.json`.
 
-`HERDR_KEY_APPENDS` adds home-row workspace switching (`Alt+J`/`Alt+K`) by
-appending to herdr's own binding lists, so the `prefix ?` popup lists them next
-to the arrows. `HERDR_KEY_SETS` sets options herdr knows but Omarchy leaves
+`HERDR_KEY_APPENDS` puts herdr's Alt+arrow navigation on the home row by
+appending to its own binding lists, so the `prefix ?` popup shows both. The
+letters keep the arrows' axes: `Alt+H/L` moves tab as `Alt+←/→` does, and
+`Alt+J/K` moves workspace as `Alt+↓/↑` does. `HERDR_KEY_SETS` sets options herdr knows but Omarchy leaves
 unbound — today agent cycling on `Alt+Shift+J`/`Alt+Shift+K`, deliberately Shift
 of the workspace keys. Those are *inserted inside* `[keys]`, before the next
 table header: the file ends with `[[keys.command]]` blocks, so a bare key
