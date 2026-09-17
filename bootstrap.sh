@@ -108,18 +108,17 @@ WEBAPPS=(
 # two are Omarchy's own presets, the 12-hour twins of the stock defaults.
 # The vertical one is unused while the bar is horizontal; it is set so that
 # moving the bar to a side does not quietly restore a 24-hour clock.
-# tmux plugins, cloned straight from git rather than through tpm.
+# smart-splits.nvim bridges Neovim splits to both tmux panes and herdr panes
+# with one set of C-h/j/k/l bindings. It replaced vim-tmux-navigator, which only
+# spoke tmux.
 #
-# tpm cannot be used here: it discovers plugins by parsing exactly ONE config
-# file and prefers ~/.config/tmux/tmux.conf when it exists. Omarchy always ships
-# that file and it carries no @plugin lines, so tpm finds nothing, installs
-# nothing, and exits 0 silently -- and its runtime loader uses the same lookup,
-# so a hand-installed plugin would never be sourced either. The tmux config
-# run-shells the plugin directly; this just puts it on disk.
-TMUX_PLUGIN_DIR="${TMUX_PLUGIN_DIR:-$HOME/.tmux/plugins}"
-TMUX_PLUGINS=(
-  "https://github.com/christoomey/vim-tmux-navigator"
-)
+# The tmux half needs NO plugin: smart-splits sets a pane-local @pane-is-vim
+# variable from Neovim and the stowed tmux config just reads it. Only herdr
+# needs wiring, because its integration is a herdr plugin shipped inside the
+# Neovim plugin's own repo -- so it can only be linked after Neovim has cloned
+# it (nvim_sync, or ./bootstrap.sh --nvim-sync, or opening nvim once).
+SMART_SPLITS_DIR="${SMART_SPLITS_DIR:-$HOME/.local/share/nvim/lazy/smart-splits.nvim}"
+HERDR_CONFIG="${HERDR_CONFIG:-$HOME/.config/herdr/config.toml}"
 
 BAR_SETTINGS=(
   'omarchy.clock|format|"dddd h:mm AP"'
@@ -168,7 +167,7 @@ HOST_FILES=(
 # different things (no fan control on a laptop, for instance), and neither
 # should have to re-answer the prompts on every run.
 BOOTSTRAP_CONF="${BOOTSTRAP_CONF:-$DOTFILES_DIR/bootstrap.conf}"
-MODULE_KEYS=(yubikey coolercontrol slack brave webapps airpods hyprmoncfg omasettings gaming work_repos work_setup nvim_default nvim_sync)
+MODULE_KEYS=(yubikey coolercontrol slack brave webapps airpods hyprmoncfg omasettings gaming herdr_nav work_repos work_setup nvim_default nvim_sync)
 declare -A MODULE_ENABLED=()
 
 module_desc() {
@@ -182,6 +181,7 @@ module_desc() {
     hyprmoncfg)    echo "Monitor profiles that auto-switch on hotplug (third-party plugin)" ;;
     omasettings)   echo "GUI settings window for Omarchy config (third-party plugin)" ;;
     gaming)        echo "Steam, gamescope and the MangoHud overlay" ;;
+    herdr_nav)     echo "C-h/j/k/l navigation between herdr panes and Neovim" ;;
     work_repos)    echo "Clone work repositories (age-encrypted manifest)" ;;
     work_setup)    echo "Prepare the work dev environment (tools, worktrees, containers)" ;;
     nvim_default)  echo "Make this Neovim config the default (~/.config/nvim)" ;;
@@ -800,35 +800,73 @@ install_webapp() {
   fi
 }
 
-step_tmux_plugins() {
-  section "tmux plugins"
+step_herdr_navigation() {
+  enabled herdr_nav || return 0
+  section "herdr navigation"
 
-  if ! have tmux; then
-    skip "tmux not installed"
+  if ! have herdr; then
+    skip "herdr not installed"
     return 0
   fi
-  if (( ${#TMUX_PLUGINS[@]} == 0 )); then
-    skip "none configured"
+  if [[ ! -d "$SMART_SPLITS_DIR" ]]; then
+    skip "smart-splits.nvim not cloned yet -- run ./bootstrap.sh --nvim-sync, or open nvim once"
     return 0
   fi
 
-  local url name dir
-  for url in "${TMUX_PLUGINS[@]}"; do
-    name="$(basename "${url%.git}")"
-    dir="$TMUX_PLUGIN_DIR/$name"
-    if [[ -d "$dir/.git" ]]; then
-      ok "$name present"
-    elif [[ -e "$dir" ]]; then
-      fail "$dir exists but is not a git checkout"
-    elif acting "clone $name"; then
-      mkdir -p "$TMUX_PLUGIN_DIR"
-      if git clone --quiet "$url" "$dir"; then
-        changed "cloned $name"
-      else
-        fail "could not clone $name"
-      fi
+  # --- link the plugin that ships inside smart-splits.nvim ------------------
+  # Capture rather than pipe into grep -q: under pipefail, grep exiting early
+  # kills herdr with SIGPIPE and the check reports a false negative.
+  local listed
+  listed="$(herdr plugin list 2>/dev/null || true)"
+  if [[ "$listed" == *"smart-splits.nvim"* ]]; then
+    ok "plugin linked"
+  elif acting "link smart-splits.nvim into herdr"; then
+    if herdr plugin link "$SMART_SPLITS_DIR" >/dev/null 2>&1; then
+      changed "linked smart-splits.nvim"
+    else
+      fail "could not link smart-splits.nvim"
+      return 0
     fi
-  done
+  fi
+
+  # --- keybindings ----------------------------------------------------------
+  # herdr's config.toml is Omarchy's, not stowed -- same situation as
+  # shell.json, so the keys are reapplied here rather than shipped.
+  if [[ ! -w "$HERDR_CONFIG" ]]; then
+    skip "no writable ${HERDR_CONFIG/#$HOME/\~}"
+    return 0
+  fi
+  local conf
+  conf="$(<"$HERDR_CONFIG")"
+  if [[ "$conf" == *"smart-splits.nvim.left"* ]]; then
+    ok "keybindings present"
+    return 0
+  fi
+  acting "add C-h/j/k/l keybindings to herdr" || return 0
+  {
+    printf '\n# Seamless Ctrl+h/j/k/l between herdr panes and Neovim splits, via the\n'
+    printf '# smart-splits.nvim herdr plugin. The plugin asks `herdr pane process-info`\n'
+    printf '# whether the focused pane runs Vim and forwards the key if so, so Vim moves\n'
+    printf '# its own splits and only crosses the pane boundary at an edge.\n'
+    local dir
+    for dir in left down up right; do
+      case $dir in
+        left)  key=ctrl+h ;;
+        down)  key=ctrl+j ;;
+        up)    key=ctrl+k ;;
+        right) key=ctrl+l ;;
+      esac
+      printf '[[keys.command]]\nkey = "%s"\ntype = "plugin_action"\ncommand = "smart-splits.nvim.%s"\ndescription = "navigate %s (vim/herdr)"\n\n' \
+        "$key" "$dir" "$dir"
+    done
+  } >> "$HERDR_CONFIG"
+
+  if herdr config check >/dev/null 2>&1; then
+    herdr server reload-config >/dev/null 2>&1 || true
+    changed "added herdr keybindings"
+  else
+    fail "herdr rejected the config it was just given; check 'herdr config check'"
+  fi
 }
 
 step_bar_settings() {
@@ -1436,7 +1474,7 @@ main() {
   step_stow
   step_desktop_db
   step_nvim_default
-  step_tmux_plugins
+  step_herdr_navigation
   step_kernel_modules
   step_host_files
   step_services

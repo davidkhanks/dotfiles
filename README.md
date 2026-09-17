@@ -40,6 +40,7 @@ own without re-answering every run.
 | `hyprmoncfg` | third-party plugin + AUR binary for auto-switching monitor profiles |
 | `omasettings` | third-party settings GUI for Omarchy config |
 | `gaming` | Steam, `gamescope`, MangoHud (off by default — large download) |
+| `herdr_nav` | `C-h/j/k/l` navigation between herdr panes and Neovim |
 | `work_repos` | `age` tooling, decrypting the manifest, cloning the repos |
 | `work_setup` | dev environment: local tools, worktrees, container homes, images |
 | `nvim_default` | symlink `~/.config/nvim` at this config |
@@ -238,13 +239,31 @@ Omarchy also sets silently overrides it. This bit for months unnoticed:
 Omarchy's `kill-window`. Ours is now trimmed to only what Omarchy does not
 provide.
 
-**tpm cannot work on Omarchy.** The plugin manager discovers plugins by parsing
-exactly one config file and prefers `~/.config/tmux/tmux.conf` when it exists.
-On Omarchy that file always exists and carries no `@plugin` lines, so tpm finds
-nothing, installs nothing and exits 0 without a word — and its runtime loader
-uses the same lookup, so a hand-installed plugin is never sourced either.
-`TMUX_PLUGINS` in `bootstrap.sh` clones plugins directly and the tmux config
-`run-shell`s them, skipping tpm entirely.
+**tpm cannot work on Omarchy**, and nothing here needs it. The plugin manager
+discovers plugins by parsing exactly one config file and prefers
+`~/.config/tmux/tmux.conf` when it exists. On Omarchy that file always exists
+and carries no `@plugin` lines, so tpm finds nothing, installs nothing and exits
+0 without a word — and its runtime loader uses the same lookup, so a
+hand-installed plugin is never sourced either.
+
+**Split navigation is `smart-splits.nvim`, not `vim-tmux-navigator`.** Same
+`C-h/j/k/l`, but it speaks both tmux *and* herdr, and adds `M-h/j/k/l` resize
+across the same boundary. The two halves work differently:
+
+| | how |
+|---|---|
+| tmux | no plugin at all — Neovim sets a pane-local `@pane-is-vim` and the stowed tmux config reads it |
+| herdr | a herdr plugin shipped *inside* the Neovim plugin's repo, linked with `herdr plugin link` |
+
+Because the herdr plugin lives inside the Neovim one, it can only be linked
+after Neovim has cloned it — so `herdr_nav` skips cleanly until `nvim_sync` (or
+`--nvim-sync`, or opening nvim once) has run. The herdr keybindings live in
+Omarchy's untracked `~/.config/herdr/config.toml`, so `step_herdr_navigation`
+reapplies them, the same way `BAR_SETTINGS` handles `shell.json`.
+
+**Do not lazy-load `smart-splits.nvim`.** The tmux half depends on
+`@pane-is-vim` being set at load; lazy-load it and tmux swallows the keys
+instead of forwarding them.
 
 **Things write through our symlinks.** Several stowed files are edited by
 tooling that does not know they are symlinks into this repo, so writes land
