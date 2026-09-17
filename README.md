@@ -39,6 +39,7 @@ own without re-answering every run.
 | `airpods` | third-party shell plugin plus its compiled `librepods` daemon |
 | `hyprmoncfg` | third-party plugin + AUR binary for auto-switching monitor profiles |
 | `omasettings` | third-party settings GUI for Omarchy config |
+| `gaming` | Steam, `gamescope`, MangoHud (off by default — large download) |
 | `work_repos` | `age` tooling, decrypting the manifest, cloning the repos |
 | `work_setup` | dev environment: local tools, worktrees, container homes, images |
 | `nvim_default` | symlink `~/.config/nvim` at this config |
@@ -57,6 +58,20 @@ connected (`omarchy bar set <id> hideWhenDisconnected false --json` pins it).
 Edit `bootstrap.conf` by hand or re-run with `--reconfigure`. A new module added
 later prompts only for itself, leaving existing answers alone. Non-interactive
 runs (CI, piped input) fall back to defaults instead of hanging.
+
+`gaming` installs the tools but does not configure them — nothing here reads a
+Steam launch option. Under Hyprland a game generally wants `gamescope`, which
+decouples its render resolution from the desktop's, matters on a fractionally
+scaled output, and can cap the framerate to the panel:
+
+```
+gamescope -W 3440 -H 1440 -r 50 -f --backend wayland --mangoapp -- %command%
+```
+
+`--backend wayland` is required when Hyprland is already the display server,
+and `--mangoapp` replaces wrapping the game in `mangohud` rather than adding to
+it. `lib32-mangohud` is in the list because the overlay silently does nothing in
+a 32-bit Proton prefix without it.
 
 ## Layout
 

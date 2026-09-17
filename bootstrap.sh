@@ -45,6 +45,17 @@ PACKAGES_CORE=(stow)
 #                           reload; gcr-ssh-askpass refuses to run standalone
 PACKAGES_YUBIKEY=(libfido2 yubikey-manager yubico-piv-tool pcsclite lxqt-openssh-askpass)
 PACKAGES_AGE=(age age-plugin-yubikey)   # decrypting the work-repo manifest
+#   gamescope      -- micro-compositor. Under Hyprland it is close to required:
+#                     it decouples the game's render resolution from the
+#                     desktop's, so a fractionally scaled output (this laptop
+#                     drives a 1.25 scale) stops resampling the game, and it can
+#                     cap framerate to the panel.
+#   mangohud       -- performance overlay. gamescope's --mangoapp uses it.
+#   lib32-mangohud -- the same for 32-bit Proton prefixes; without it the
+#                     overlay silently no-ops in older titles.
+#   steam          -- listed so a rebuild restores it; already present here.
+# Needs [multilib] for the lib32-* packages, which Omarchy enables by default.
+PACKAGES_GAMING=(steam gamescope mangohud lib32-mangohud)
 
 # AUR packages, installed with yay (Omarchy ships it). Left interactive on
 # purpose -- yay shows PKGBUILDs for review and needs your sudo password, and
@@ -144,7 +155,7 @@ HOST_FILES=(
 # different things (no fan control on a laptop, for instance), and neither
 # should have to re-answer the prompts on every run.
 BOOTSTRAP_CONF="${BOOTSTRAP_CONF:-$DOTFILES_DIR/bootstrap.conf}"
-MODULE_KEYS=(yubikey coolercontrol slack brave webapps airpods hyprmoncfg omasettings work_repos work_setup nvim_default nvim_sync)
+MODULE_KEYS=(yubikey coolercontrol slack brave webapps airpods hyprmoncfg omasettings gaming work_repos work_setup nvim_default nvim_sync)
 declare -A MODULE_ENABLED=()
 
 module_desc() {
@@ -157,6 +168,7 @@ module_desc() {
     airpods)       echo "AirPods bar widget (third-party shell plugin + compiled daemon)" ;;
     hyprmoncfg)    echo "Monitor profiles that auto-switch on hotplug (third-party plugin)" ;;
     omasettings)   echo "GUI settings window for Omarchy config (third-party plugin)" ;;
+    gaming)        echo "Steam, gamescope and the MangoHud overlay" ;;
     work_repos)    echo "Clone work repositories (age-encrypted manifest)" ;;
     work_setup)    echo "Prepare the work dev environment (tools, worktrees, containers)" ;;
     nvim_default)  echo "Make this Neovim config the default (~/.config/nvim)" ;;
@@ -166,7 +178,7 @@ module_desc() {
 }
 # Anything hardware- or host-specific defaults to asking; nvim_sync is slow so
 # it defaults off.
-module_default() { case "$1" in nvim_sync) echo no ;; *) echo yes ;; esac; }
+module_default() { case "$1" in nvim_sync|gaming) echo no ;; *) echo yes ;; esac; }
 
 enabled() { [[ "${MODULE_ENABLED[$1]:-no}" == yes ]]; }
 
@@ -342,6 +354,7 @@ step_packages() {
   enabled yubikey    && want+=("${PACKAGES_YUBIKEY[@]}")
   enabled airpods    && want+=("${PACKAGES_AIRPODS[@]}")
   enabled work_repos && want+=("${PACKAGES_AGE[@]}")
+  enabled gaming     && want+=("${PACKAGES_GAMING[@]}")
   local missing=()
   for p in "${want[@]}"; do
     pacman -Qq "$p" >/dev/null 2>&1 || missing+=("$p")
