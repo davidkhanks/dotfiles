@@ -697,6 +697,63 @@ step_own_plugins() {
   (( found )) || skip "none stowed"
 }
 
+# Install one web app launcher. Takes a "name|url|icon" spec so the same
+# routine serves both the public WEBAPPS list and the work manifest, whose
+# entries cannot be named in this repo. Idempotent: an existing launcher is
+# reported and left alone.
+install_webapp() {
+  local spec="$1" name url icon icon_ref slug
+  local apps_dir="$HOME/.local/share/applications"
+  local icon_dir="$HOME/.local/share/icons/hicolor/256x256/apps"
+
+  IFS='|' read -r name url icon <<<"$spec"
+  if [[ -z $name || -z $url ]]; then
+    fail "malformed web app entry (expected name|url[|icon])"
+    return 0
+  fi
+  if [[ -f "$apps_dir/$name.desktop" ]]; then
+    ok "$name present"
+    return 0
+  fi
+  acting "install $name web app" || return 0
+
+  # Resolve an icon we KNOW works before calling the installer. omarchy-webapp-
+  # install only auto-fetches icons in its interactive mode, and it aborts the
+  # whole install when it cannot download one -- so handing it a URL that might
+  # 404 loses the launcher, not just the icon. Internal sites are exactly the
+  # case that fails: bitbucket.org has no /apple-touch-icon.png, and anything
+  # behind SSO serves a login page instead of an image.
+  slug="$(tr '[:upper:]' '[:lower:]' <<<"$name" | sed 's/[^[:alnum:]]\+/-/g; s/^-//; s/-$//')"
+  mkdir -p "$icon_dir"
+  icon_ref=""
+
+  # 1. the icon URL from the spec, when one was given
+  # 2. the site's conventional /apple-touch-icon.png
+  local candidate
+  for candidate in ${icon:+"$icon"} "$(sed -E 's#^(https?://[^/]+).*#\1#' <<<"$url")/apple-touch-icon.png"; do
+    if curl -fsSL --max-time 20 -o "$icon_dir/$slug.png" "$candidate" 2>/dev/null \
+       && [[ "$(file -b --mime-type "$icon_dir/$slug.png" 2>/dev/null)" == image/* ]]; then
+      gtk-update-icon-cache "$HOME/.local/share/icons/hicolor" &>/dev/null || true
+      icon_ref="$slug"
+      break
+    fi
+    rm -f "$icon_dir/$slug.png"
+  done
+
+  # 3. a generic globe from the icon theme, so a missing icon costs the icon
+  #    rather than the launcher.
+  if [[ -z $icon_ref ]]; then
+    icon_ref="applications-internet"
+    note "$name has no icon of its own; used the generic '$icon_ref'. Drop a PNG at ${icon_dir/#$HOME/\~}/$slug.png and re-run to replace it."
+  fi
+
+  if omarchy webapp install "$name" "$url" "$icon_ref" >/dev/null 2>&1; then
+    changed "installed $name"
+  else
+    fail "$name web app install failed"
+  fi
+}
+
 step_webapps() {
   enabled webapps || return 0
   section "Web apps"
@@ -706,39 +763,9 @@ step_webapps() {
     return 0
   fi
 
-  local apps_dir="$HOME/.local/share/applications"
-  local icon_dir="$HOME/.local/share/icons/hicolor/256x256/apps"
-  local spec name url icon icon_ref
-
+  local spec
   for spec in "${WEBAPPS[@]}"; do
-    IFS='|' read -r name url icon <<<"$spec"
-    if [[ -f "$apps_dir/$name.desktop" ]]; then
-      ok "$name present"
-      continue
-    fi
-    acting "install $name web app" || continue
-
-    # Fetch the icon ourselves and pass it by name; fall back to handing the
-    # installer the URL and letting it try.
-    icon_ref="$url"
-    if [[ -n $icon ]]; then
-      local slug
-      slug="$(tr '[:upper:]' '[:lower:]' <<<"$name" | sed 's/[^[:alnum:]]\+/-/g; s/^-//; s/-$//')"
-      mkdir -p "$icon_dir"
-      if curl -fsSL --max-time 20 -o "$icon_dir/$slug.png" "$icon" 2>/dev/null \
-         && [[ "$(file -b --mime-type "$icon_dir/$slug.png" 2>/dev/null)" == image/* ]]; then
-        gtk-update-icon-cache "$HOME/.local/share/icons/hicolor" &>/dev/null || true
-        icon_ref="$slug"
-      else
-        rm -f "$icon_dir/$slug.png"
-      fi
-    fi
-
-    if omarchy webapp install "$name" "$url" "$icon_ref" >/dev/null 2>&1; then
-      changed "installed $name"
-    else
-      fail "$name web app install failed"
-    fi
+    install_webapp "$spec"
   done
 }
 
@@ -1034,7 +1061,7 @@ step_work_repos() {
 # this script names an employer, a project or a host.
 WORK_ROOT=""
 declare -a WORK_REPOS=() WORK_TOOLS=() WORK_WORKTREES=() WORK_DEVHOMES=()
-declare -a WORK_SETTINGS=() WORK_IMAGES=() WORK_SERVICES=()
+declare -a WORK_SETTINGS=() WORK_IMAGES=() WORK_SERVICES=() WORK_WEBAPPS=()
 WORK_VLIB=""
 WORK_PINFILE="version"   # file in each project naming the shared-lib ref
 WORK_CREDTOOL="the credential manager"
@@ -1059,6 +1086,11 @@ parse_work_manifest() {
       settings)  WORK_SETTINGS+=("$b|$c|$d") ;;       # <project>|<template>|<target>
       image)     WORK_IMAGES+=("$b|$c") ;;            # <project>|<dev subcommand>
       services)  WORK_SERVICES+=("$b") ;;             # project providing shared services
+      # Web app launcher for an internal URL. Takes the rest of the line rather
+      # than positional fields, because the display name may contain spaces:
+      #   webapp Bitbucket PRs|https://host/org/repo/pulls|https://host/icon.png
+      # The icon is optional; without one the installer is handed the URL.
+      webapp)    WORK_WEBAPPS+=("${line#*webapp }") ;;
       *)         [[ "$a" == *:* || "$a" == git@* || "$a" == http* ]] && WORK_REPOS+=("$a|${b:-}") ;;
     esac
   done < "$file"
@@ -1081,6 +1113,24 @@ step_work_setup() {
   [[ -n $manifest ]] || { skip "no work manifest"; return 0; }
   parse_work_manifest "$manifest"
   [[ -n $tmp ]] && rm -f "$tmp"
+
+  # --- web app launchers for internal URLs -------------------------------
+  # Deliberately above the clone-root check: a launcher is just a .desktop
+  # file and does not need the repositories to exist. Reuses the manifest
+  # this step already decrypted rather than paying for a second YubiKey
+  # touch in step_webapps, which only knows the public WEBAPPS list.
+  if (( ${#WORK_WEBAPPS[@]} )); then
+    if ! have omarchy; then
+      skip "omarchy not available, so web apps were left out"
+    elif ! enabled webapps; then
+      skip "${#WORK_WEBAPPS[@]} web app(s) in the manifest (webapps module off)"
+    else
+      local spec
+      for spec in "${WORK_WEBAPPS[@]}"; do
+        install_webapp "$spec"
+      done
+    fi
+  fi
 
   local root="$WORK_ROOT"
   [[ -d "$root" ]] || { skip "clone root not present yet"; return 0; }

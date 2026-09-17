@@ -120,9 +120,14 @@ stay that way. Every such name lives in the work manifest
 
 When adding work behaviour, add a **manifest directive** and a generic loop —
 never a hardcoded name. Existing directives: `root`, `tool`, `shared`,
-`pinfile`, `worktree`, `devhome`, `settings`, `image`, `services`, `credtool`.
-If a step needs a new fact about the work setup, that fact belongs in the
-manifest.
+`pinfile`, `worktree`, `devhome`, `settings`, `image`, `services`, `credtool`,
+`webapp`. If a step needs a new fact about the work setup, that fact belongs in
+the manifest.
+
+A URL is a name. An internal link like a Bitbucket pull-request page carries
+the employer in its path, so it belongs in the manifest as a `webapp`
+directive, not in the `WEBAPPS` array at the top of `bootstrap.sh` — that
+array is for generic product URLs (linear.app) with no org in them.
 
 The credentials gate in `step_work_setup` is deliberate: mechanical work runs
 unconditionally, and only image builds and container startup sit behind a

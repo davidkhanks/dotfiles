@@ -136,6 +136,8 @@ settings <project> <src> <dst>  per-developer settings file to seed
 image <project> <dev-subcmd>    container image to build
 services <project>              project providing shared services; started first
 credtool <command>              credential manager named in help text
+webapp <name>|<url>[|<icon>]    launcher for an internal URL (pipe-delimited,
+                                because the name may contain spaces)
 ```
 
 `work_setup` stops at a **credentials gate**: everything mechanical (docker,
