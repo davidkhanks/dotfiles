@@ -869,6 +869,62 @@ step_herdr_navigation() {
   fi
 }
 
+# Home-row workspace switching, appended to herdr's own binding lists rather
+# than bound separately, so the help popup lists them alongside the arrows.
+#
+# Alt+Shift rather than plain Alt: Alt+h/j/k/l is resize in Neovim and tmux, and
+# herdr grabs keys before the pane sees them, so a plain Alt+j here would break
+# resize inside every Neovim pane. Shift also matches herdr's own grammar, where
+# Alt+Shift+arrows already moves tabs.
+#   <option key>|<binding to append>
+HERDR_KEY_APPENDS=(
+  "previous_workspace|alt+shift+k"
+  "next_workspace|alt+shift+j"
+)
+
+step_herdr_keys() {
+  enabled herdr_nav || return 0
+  section "herdr key additions"
+
+  if ! have herdr; then
+    skip "herdr not installed"
+    return 0
+  fi
+  if [[ ! -w "$HERDR_CONFIG" ]]; then
+    skip "no writable ${HERDR_CONFIG/#$HOME/\~}"
+    return 0
+  fi
+
+  local spec key binding conf touched=0
+  for spec in "${HERDR_KEY_APPENDS[@]}"; do
+    key="${spec%%|*}"; binding="${spec##*|}"
+    conf="$(<"$HERDR_CONFIG")"
+    if [[ "$conf" == *"\"$binding\""* ]]; then
+      ok "$key has $binding"
+      continue
+    fi
+    # Only append to an option that already exists as a list. Creating one from
+    # scratch risks duplicating a key Omarchy defines elsewhere in the file.
+    if [[ "$conf" != *"$key = ["* ]]; then
+      fail "$key is not a list in ${HERDR_CONFIG##*/}; left alone"
+      continue
+    fi
+    if acting "add $binding to $key"; then
+      sed -i "s|^\($key = \[[^]]*\)\]|\1, \"$binding\"]|" "$HERDR_CONFIG"
+      touched=1
+      changed "$key gained $binding"
+    fi
+  done
+
+  if (( touched )); then
+    if herdr config check >/dev/null 2>&1; then
+      herdr server reload-config >/dev/null 2>&1 || true
+    else
+      fail "herdr rejected the edited config; check 'herdr config check'"
+    fi
+  fi
+}
+
 step_bar_settings() {
   section "Bar widget settings"
 
@@ -1475,6 +1531,7 @@ main() {
   step_desktop_db
   step_nvim_default
   step_herdr_navigation
+  step_herdr_keys
   step_kernel_modules
   step_host_files
   step_services

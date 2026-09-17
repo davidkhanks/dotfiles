@@ -261,6 +261,12 @@ after Neovim has cloned it — so `herdr_nav` skips cleanly until `nvim_sync` (o
 Omarchy's untracked `~/.config/herdr/config.toml`, so `step_herdr_navigation`
 reapplies them, the same way `BAR_SETTINGS` handles `shell.json`.
 
+`HERDR_KEY_APPENDS` adds home-row workspace switching (`Alt+Shift+J/K`) by
+appending to herdr's own binding lists, so the `prefix ?` popup shows them next
+to the arrows. Note the Shift: `Alt+h/j/k/l` is resize in Neovim and tmux, and
+herdr intercepts keys before the pane sees them, so a plain `Alt+J` there would
+silently break resize inside every Neovim pane.
+
 **Do not lazy-load `smart-splits.nvim`.** The tmux half depends on
 `@pane-is-vim` being set at load; lazy-load it and tmux swallows the keys
 instead of forwarding them.
