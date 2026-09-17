@@ -876,6 +876,16 @@ step_herdr_navigation() {
 # Ctrl+Alt+Shift+arrows and nothing binds Alt+h/j/k/l any more. k is up/previous
 # and j is down/next, matching vim and the Alt+arrow bindings they sit beside.
 #   <option key>|<binding to append>
+#   <option>|<binding>   -- set inside [keys] when the option is absent entirely
+# Inserted before the next table header, not appended at EOF: the file ends with
+# [[keys.command]] blocks, and a bare key after those would belong to that table
+# rather than [keys].
+HERDR_KEY_SETS=(
+  "previous_agent|alt+shift+k"
+  "next_agent|alt+shift+j"
+)
+
+#   <option key>|<binding to append>
 HERDR_KEY_APPENDS=(
   "previous_workspace|alt+k"
   "next_workspace|alt+j"
@@ -915,6 +925,26 @@ step_herdr_keys() {
     fi
   done
 
+
+  local setspec setkey setbind insert_at
+  for setspec in "${HERDR_KEY_SETS[@]}"; do
+    setkey="${setspec%%|*}"; setbind="${setspec##*|}"
+    conf="$(<"$HERDR_CONFIG")"
+    if [[ "$conf" == *"$setkey = "* ]]; then
+      ok "$setkey set"
+      continue
+    fi
+    insert_at="$(awk '/^\[keys\]/{f=1;next} f&&/^\[/{print NR;exit}' "$HERDR_CONFIG")"
+    if [[ -z $insert_at ]]; then
+      fail "could not find the end of [keys] in ${HERDR_CONFIG##*/}"
+      continue
+    fi
+    if acting "set $setkey = $setbind"; then
+      sed -i "${insert_at}i\\${setkey} = \"${setbind}\"" "$HERDR_CONFIG"
+      touched=1
+      changed "$setkey = $setbind"
+    fi
+  done
   if (( touched )); then
     if herdr config check >/dev/null 2>&1; then
       herdr server reload-config >/dev/null 2>&1 || true

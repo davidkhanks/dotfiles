@@ -263,7 +263,11 @@ reapplies them, the same way `BAR_SETTINGS` handles `shell.json`.
 
 `HERDR_KEY_APPENDS` adds home-row workspace switching (`Alt+J`/`Alt+K`) by
 appending to herdr's own binding lists, so the `prefix ?` popup lists them next
-to the arrows. Resizing deliberately stays on herdr's `Ctrl+Alt+Shift+arrows`,
+to the arrows. `HERDR_KEY_SETS` sets options herdr knows but Omarchy leaves
+unbound — today agent cycling on `Alt+Shift+J`/`Alt+Shift+K`, deliberately Shift
+of the workspace keys. Those are *inserted inside* `[keys]`, before the next
+table header: the file ends with `[[keys.command]]` blocks, so a bare key
+appended at EOF would belong to that table instead. Resizing deliberately stays on herdr's `Ctrl+Alt+Shift+arrows`,
 which is what leaves `Alt+h/j/k/l` free for this.
 
 `HERDR_KEYS_DISABLE` + `HERDR_SHELL_KEYS` halve the resize step. herdr has no
