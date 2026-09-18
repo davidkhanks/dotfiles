@@ -1,7 +1,8 @@
 # Fan control and thermals
 
 Hardware-specific notes for this desktop. Everything here was measured on the
-machine, not taken from a datasheet.
+machine, not taken from a datasheet. The laptop shares none of this — it has no
+Super I/O and no CoolerControl; see [`laptop-thermals.md`](laptop-thermals.md).
 
 ## Hardware
 

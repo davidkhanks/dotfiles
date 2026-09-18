@@ -149,6 +149,12 @@ the explicit opt-in.
 
 Full detail in `docs/thermals.md` and `docs/yubikey-ssh.md`. The short version:
 
+- **On the laptop, clamshell runs COOLER and SLOWER.** Measured: 82.7°C /
+  2607 MHz closed vs 91.0°C / 2851 MHz open, same load. Intel DPTF manages
+  chassis skin temperature, so a closed lid traps heat against the keyboard,
+  DPTF clamps package power, and both clocks and die temperature fall together.
+  Never read the lower closed-lid temperature as spare headroom — it is sitting
+  on a different limit. See `docs/laptop-thermals.md`.
 - **`CPUTIN` reads −63°C.** Unwired header, ASRock quirk. Never use it as a fan
   curve source. Use `CPU Temp Package Id 0` or `PECI Agent 0`.
 - **`fan3` cannot stop.** Hard floor ~815 RPM at any duty including 0. It is the

@@ -215,6 +215,7 @@ left/right/middle and emits `pressed(int button)`. A new plugin needs
 ## Docs
 
 - [`docs/thermals.md`](docs/thermals.md) — fan topology, sensor traps, curve design
+- [`docs/laptop-thermals.md`](docs/laptop-thermals.md) — clamshell throttling, DPTF skin-temperature limits
 - [`docs/yubikey-ssh.md`](docs/yubikey-ssh.md) — YubiKey PIV SSH setup
 - [`docs/neovim.md`](docs/neovim.md) — Neovim config and plugin pinning
 - [`hosts/omarchy/README.md`](hosts/omarchy/README.md) — this desktop's specifics
