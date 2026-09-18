@@ -45,6 +45,13 @@ PACKAGES_CORE=(stow)
 #                           reload; gcr-ssh-askpass refuses to run standalone
 PACKAGES_YUBIKEY=(libfido2 yubikey-manager yubico-piv-tool pcsclite lxqt-openssh-askpass)
 PACKAGES_AGE=(age age-plugin-yubikey)   # decrypting the work-repo manifest
+#   aws-cli-v2 -- the AWS CLI. Explicitly v2, not the `aws-cli` package, which
+#                 is v1; they conflict and v2 provides the same `aws` binary.
+#                 140 MB installed, which is why it is gated rather than core.
+# Tied to work_setup because that is where AWS appears in this repo -- the
+# per-project container homes seed themselves from ~/.aws. Move it to
+# PACKAGES_CORE if a machine needs the CLI without the work environment.
+PACKAGES_WORK=(aws-cli-v2)
 #   gamescope      -- micro-compositor. Under Hyprland it is close to required:
 #                     it decouples the game's render resolution from the
 #                     desktop's, so a fractionally scaled output (this laptop
@@ -385,6 +392,7 @@ step_packages() {
   enabled airpods    && want+=("${PACKAGES_AIRPODS[@]}")
   enabled work_repos && want+=("${PACKAGES_AGE[@]}")
   enabled gaming     && want+=("${PACKAGES_GAMING[@]}")
+  enabled work_setup && want+=("${PACKAGES_WORK[@]}")
   local missing=()
   for p in "${want[@]}"; do
     pacman -Qq "$p" >/dev/null 2>&1 || missing+=("$p")

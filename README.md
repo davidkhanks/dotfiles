@@ -44,7 +44,7 @@ own without re-answering every run.
 | `gaming` | Steam, `gamescope`, MangoHud (off by default — large download) |
 | `herdr_nav` | `C-h/j/k/l` navigation between herdr panes and Neovim |
 | `work_repos` | `age` tooling, decrypting the manifest, cloning the repos |
-| `work_setup` | dev environment: local tools, worktrees, container homes, images |
+| `work_setup` | dev environment: `aws-cli-v2`, local tools, worktrees, container homes, images |
 | `nvim_default` | symlink `~/.config/nvim` at this config |
 | `nvim_sync` | `:Lazy restore` on every run (off by default — slow) |
 
