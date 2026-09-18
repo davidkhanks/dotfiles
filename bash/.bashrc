@@ -22,6 +22,25 @@
 # (don't mess with these directly, just overwrite them here!)
 source "$OMARCHY_PATH/default/bash/rc"
 
+# --- ble.sh x fzf ------------------------------------------------------------
+# Omarchy's default/bash/init sources fzf's raw completion.bash and
+# key-bindings.bash unconditionally. ble.sh's manual is explicit that fzf
+# settings loaded elsewhere must be disabled in a ble.sh session, and ships
+# replacement modules that do the same job in a way the line editor understands.
+#
+# These therefore go HERE, after Omarchy's rc, rather than in ~/.blerc where the
+# manual suggests. .blerc is read when ble.sh is sourced -- which is above, and
+# so before Omarchy loads the raw bindings -- and the raw ones would then win.
+# Loading after the rc lets the ble.sh versions take the keys instead.
+#
+# Arch installs fzf's shell files flat in /usr/share/fzf rather than in a
+# shell/ subdirectory, which is where the module looks by default.
+if [[ ${BLE_VERSION-} ]]; then
+  _ble_contrib_fzf_base=/usr/share/fzf
+  ble-import -d integration/fzf-completion
+  ble-import -d integration/fzf-key-bindings
+fi
+
 # Add your own exports, aliases, and functions here.
 #
 # Make an alias for invoking commands you use constantly
