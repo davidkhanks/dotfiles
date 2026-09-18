@@ -4,6 +4,20 @@
 # If not running interactively, don't do anything else (leave this above the rc source)
 [[ $- != *i* ]] && return
 
+# --- ble.sh (Bash Line Editor) ----------------------------------------------
+# Fish-style autosuggestions: a greyed-out completion from history appears as
+# you type, and Right / End accepts it. Also syntax highlighting and a better
+# completion menu. Installed user-local under ~/.local by bootstrap.sh -- no
+# root, no AUR.
+#
+# This is a two-part load and the order is not optional. ble.sh must be sourced
+# EARLY, before anything that installs a PROMPT_COMMAND -- Omarchy's rc runs
+# `starship init bash` -- but with --noattach so it does not take over the line
+# editor yet. It then attaches at the very END of this file, once every prompt
+# hook is registered. Attaching first, or sourcing after starship, leaves ble.sh
+# fighting the prompt for control of the display.
+[[ -r "$HOME/.local/share/blesh/ble.sh" ]] && source "$HOME/.local/share/blesh/ble.sh" --noattach
+
 # All the default Omarchy aliases and functions
 # (don't mess with these directly, just overwrite them here!)
 source "$OMARCHY_PATH/default/bash/rc"
@@ -42,3 +56,8 @@ yk-reload() {
 #   aegis load <profile>  export its vars into this shell (touch)
 #   aegis status          what is loaded and when it expires
 command -v aegis >/dev/null 2>&1 && eval "$(aegis shell-init bash)"
+
+# --- ble.sh, part two -------------------------------------------------------
+# Must be the LAST line: attaching hands ble.sh the line editor, and anything
+# registering a prompt hook afterwards would be invisible to it.
+[[ ${BLE_VERSION-} ]] && ble-attach

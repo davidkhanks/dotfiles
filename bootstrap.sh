@@ -117,6 +117,12 @@ WEBAPPS=(
 # needs wiring, because its integration is a herdr plugin shipped inside the
 # Neovim plugin's own repo -- so it can only be linked after Neovim has cloned
 # it (nvim_sync, or ./bootstrap.sh --nvim-sync, or opening nvim once).
+# ble.sh -- fish-style autosuggestions, syntax highlighting and a better
+# completion menu for bash. The stowed .bashrc sources it behind an existence
+# guard, so a machine without it simply gets a plain bash line editor.
+BLESH_REPO="${BLESH_REPO:-https://github.com/akinomyoga/ble.sh.git}"
+BLESH_DIR="${BLESH_DIR:-$HOME/.local/share/blesh}"
+
 SMART_SPLITS_DIR="${SMART_SPLITS_DIR:-$HOME/.local/share/nvim/lazy/smart-splits.nvim}"
 HERDR_CONFIG="${HERDR_CONFIG:-$HOME/.config/herdr/config.toml}"
 
@@ -176,7 +182,7 @@ HOST_FILES=(
 # different things (no fan control on a laptop, for instance), and neither
 # should have to re-answer the prompts on every run.
 BOOTSTRAP_CONF="${BOOTSTRAP_CONF:-$DOTFILES_DIR/bootstrap.conf}"
-MODULE_KEYS=(yubikey coolercontrol slack brave webapps airpods hyprmoncfg omasettings omastats gaming herdr_nav work_repos work_setup nvim_default nvim_sync)
+MODULE_KEYS=(yubikey coolercontrol slack brave webapps airpods hyprmoncfg omasettings omastats blesh gaming herdr_nav work_repos work_setup nvim_default nvim_sync)
 declare -A MODULE_ENABLED=()
 
 module_desc() {
@@ -190,6 +196,7 @@ module_desc() {
     hyprmoncfg)    echo "Monitor profiles that auto-switch on hotplug (third-party plugin)" ;;
     omasettings)   echo "GUI settings window for Omarchy config (third-party plugin)" ;;
     omastats)      echo "System monitor bar widget (third-party plugin)" ;;
+    blesh)         echo "ble.sh: fish-style autosuggestions for bash" ;;
     gaming)        echo "Steam, gamescope and the MangoHud overlay" ;;
     herdr_nav)     echo "C-h/j/k/l navigation between herdr panes and Neovim" ;;
     work_repos)    echo "Clone work repositories (age-encrypted manifest)" ;;
@@ -813,6 +820,37 @@ install_webapp() {
   else
     fail "$name web app install failed"
   fi
+}
+
+step_blesh() {
+  enabled blesh || return 0
+  section "Bash line editor"
+
+  if [[ -r "$BLESH_DIR/ble.sh" ]]; then
+    ok "ble.sh present"
+    return 0
+  fi
+  local missing=()
+  for t in git make gawk; do have "$t" || missing+=("$t"); done
+  if (( ${#missing[@]} )); then
+    skip "needs ${missing[*]}"
+    return 0
+  fi
+  acting "build and install ble.sh into ~/.local" || return 0
+
+  # Built from source rather than the AUR on purpose. The AUR package needs yay,
+  # which needs a terminal for its sudo prompt, and ble.sh installs entirely
+  # under ~/.local with no root at all -- so this works unattended and the AUR
+  # version (0.3.4) lags the source tree (0.4.0-devel).
+  local tmp
+  tmp="$(mktemp -d)"
+  if git clone --quiet --recursive --depth 1 --shallow-submodules "$BLESH_REPO" "$tmp/ble.sh" \
+     && make -C "$tmp/ble.sh" install PREFIX="$HOME/.local" >/dev/null 2>&1; then
+    changed "installed ble.sh"
+  else
+    fail "ble.sh build failed"
+  fi
+  rm -rf "$tmp"
 }
 
 step_herdr_navigation() {
@@ -1680,6 +1718,7 @@ main() {
   step_stow
   step_desktop_db
   step_nvim_default
+  step_blesh
   step_herdr_navigation
   step_herdr_keys
   step_herdr_resize

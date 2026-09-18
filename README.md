@@ -40,6 +40,7 @@ own without re-answering every run.
 | `hyprmoncfg` | third-party plugin + AUR binary for auto-switching monitor profiles |
 | `omasettings` | third-party settings GUI for Omarchy config |
 | `omastats` | third-party system monitor bar widget (CPU/GPU/mem/net/temp) |
+| `blesh` | `ble.sh` — fish-style autosuggestions and highlighting for bash |
 | `gaming` | Steam, `gamescope`, MangoHud (off by default — large download) |
 | `herdr_nav` | `C-h/j/k/l` navigation between herdr panes and Neovim |
 | `work_repos` | `age` tooling, decrypting the manifest, cloning the repos |
@@ -79,6 +80,17 @@ gamescope -W 3440 -H 1440 -r 50 -f --backend wayland --mangoapp -- %command%
 and `--mangoapp` replaces wrapping the game in `mangohud` rather than adding to
 it. `lib32-mangohud` is in the list because the overlay silently does nothing in
 a 32-bit Proton prefix without it.
+
+`blesh` builds [ble.sh](https://github.com/akinomyoga/ble.sh) from source into
+`~/.local` — no root, and deliberately not the AUR package, which needs `yay`
+(and therefore a terminal for its sudo prompt) and lags the source tree.
+
+The stowed `.bashrc` sources it in **two parts, and the order is not optional**:
+early with `--noattach`, before Omarchy's rc runs `starship init bash`, then
+`ble-attach` as the last line of the file once every prompt hook is registered.
+Attaching first, or sourcing after starship, leaves the two fighting over the
+display. Both lines are guarded, so a machine with `blesh=no` just gets a plain
+bash line editor.
 
 ## Layout
 
