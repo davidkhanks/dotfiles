@@ -174,6 +174,20 @@ Full detail in `docs/thermals.md` and `docs/yubikey-ssh.md`. The short version:
   until 95°C by explicit user choice, leaving 5°C to Tjmax. Needs a real
   workload logged with `thermal-log` before it can be trusted.
 - `gopls` is enabled but cannot install without the Go toolchain.
+- **Untested lid edge case on AC.** `hosts/panther/` sets
+  `HandleLidSwitchExternalPower=ignore` so losing the external display in
+  clamshell does not suspend the laptop. The side effect is that on AC a lid
+  close is never acted on at all. Unknown: whether closing the lid while the
+  machine is *already* suspended wakes it. If it does, it would now stay awake
+  with the lid shut instead of going back to sleep — a hot laptop in a bag.
+  The journal cannot answer it: all 12 suspends recorded so far were triggered
+  BY a lid close, so the sequence never occurred. The nearest evidence is
+  reassuring but indirect — on 2026-09-16 it held s2idle from 17:50 to 19:21
+  with the lid shut. To settle it: `systemctl suspend`, close the lid once
+  asleep, wait ~15s, open it, then
+  `journalctl -b | grep -iE 'PM: suspend (entry|exit)|Lid (opened|closed)'`.
+  Two `suspend entry` lines means closing the lid woke it and the rule needs
+  narrowing; one means it behaved.
 - **Wake-on-LAN is not armed** on the laptop's USB ethernet adapter (Realtek
   `0bda:8153`). Closing the lid on battery suspends to s2idle, and plugging in
   AC cannot wake it — `ACAD` exposes no `wakeup` attribute at all. The only
