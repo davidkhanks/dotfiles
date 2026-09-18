@@ -72,6 +72,18 @@ hl.config({
 --   },
 -- })
 
+-- Slack fully opaque. Omarchy tags every window "default-opacity" and then
+-- applies opacity 0.985/0.96 to anything still carrying the tag; apps opt out
+-- by removing it, which is what Omarchy itself does for Steam, qemu and the
+-- video apps. Slack is worth the same treatment: 1.5% transparency is
+-- invisible on text but makes huddle video look washed out and strange, since
+-- whatever is behind the window bleeds through the picture.
+--
+-- Both halves are needed. Dropping the tag stops Omarchy's later rule from
+-- matching, and the explicit "1 1" sets active/inactive opacity outright, so
+-- this does not depend on which rule Hyprland evaluates last.
+o.window({ class = "^(slack)$" }, { tag = "-default-opacity", opacity = "1 1" })
+
 -- Keep the SSH askpass PIN prompt visible as a centred modal. It appears the
 -- moment the YubiKey is replugged (see yubikey-ssh-reload.service), so `pin`
 -- keeps it on screen across workspace switches.
