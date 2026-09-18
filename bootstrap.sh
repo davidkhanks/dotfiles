@@ -152,8 +152,12 @@ SERVICES=(pcscd.socket coolercontrold.service)
 # stow only targets $HOME. Paths are relative to /. These are NOT portable:
 # CoolerControl's config embeds hardware-derived device UIDs and fan curves
 # tuned to this box's specific fans, so another machine must never get them.
+# Entries are <path-relative-to-/>|<module>. An empty module means always; a
+# named one ties the file to that module, so turning the module off removes its
+# host files from the run as well as its packages and services.
 HOST_FILES=(
-  "etc/coolercontrol/config.toml"
+  "etc/coolercontrol/config.toml|coolercontrol"
+  "etc/systemd/logind.conf.d/30-lid-external-power.conf|"
 )
 
 # Work repositories are described by a manifest kept OUTSIDE this repo, because
@@ -562,14 +566,19 @@ step_kernel_modules() {
 }
 
 step_host_files() {
-  enabled coolercontrol || return 0
   section "Host-specific files ($HOSTNAME_SHORT)"
   local root="$DOTFILES_DIR/hosts/$HOSTNAME_SHORT"
   if [[ ! -d "$root" ]]; then
     skip "no hosts/$HOSTNAME_SHORT in the repo"
     return 0
   fi
-  for f in "${HOST_FILES[@]}"; do
+  local spec mod
+  for spec in "${HOST_FILES[@]}"; do
+    f="${spec%%|*}"; mod="${spec##*|}"
+    if [[ -n $mod ]] && ! enabled "$mod"; then
+      skip "$f ($mod module off)"
+      continue
+    fi
     if [[ ! -e "$root/$f" ]]; then
       skip "$f not captured for this host"
       continue

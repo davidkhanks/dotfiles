@@ -17,8 +17,15 @@ HOST="$(hostnamectl hostname 2>/dev/null || hostname)"
 ROOT="$DOTFILES/hosts/$HOST"
 
 # Files tracked for this host, as paths relative to /.
+#
+# Keep in sync with HOST_FILES in bootstrap.sh -- that list carries a module
+# gate per entry, this one does not, so a file belonging to another host shows
+# up here as "missing on system". Deliberately a plain list rather than derived
+# from hosts/$HOST/: `capture` has to know about a file BEFORE it exists in the
+# repo, which is the whole point of capturing it.
 FILES=(
   "etc/coolercontrol/config.toml"
+  "etc/systemd/logind.conf.d/30-lid-external-power.conf"
 )
 
 usage() { sed -n '3,12p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }

@@ -118,9 +118,18 @@ host-config capture    # pull live files into the repo, then commit
 host-config restore    # push repo files back out (needs sudo)
 ```
 
-Today that is CoolerControl's fan curves. They are **not portable** — the
-config embeds hardware-derived device UIDs and curves tuned to this box's
-specific fans. See `docs/thermals.md`.
+Entries are `<path>|<module>`; an empty module means always, a named one ties
+the file to that module so turning it off removes the file from the run too.
+
+- `hosts/omarchy/` — CoolerControl's fan curves, gated on `coolercontrol`.
+  **Not portable**: the config embeds hardware-derived device UIDs and curves
+  tuned to that box's fans. See `docs/thermals.md`.
+- `hosts/panther/` — a logind drop-in setting
+  `HandleLidSwitchExternalPower=ignore`, so losing the external display in
+  clamshell mode does not suspend the laptop while it is on AC. logind resolves
+  a lid close as docked → external power → default, and the middle rule is
+  *ignored unless explicitly set*, so the machine otherwise falls through to
+  `HandleLidSwitch=suspend` the moment it stops counting as docked.
 
 `bootstrap.sh` deliberately **does not** overwrite a drifted host file, because
 the live copy may hold tuning done in a GUI since the last capture. It reports
