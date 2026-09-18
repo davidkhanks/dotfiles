@@ -125,6 +125,11 @@ BAR_SETTINGS=(
   'omarchy.clock|verticalFormat|"h\n—\nmm\nAP"'
 )
 
+# A system monitor for the bar: CPU, GPU, memory, disk, network, temperature,
+# fan and battery with live graphs. Same author as the hyprmoncfg plugin.
+OMASTATS_PLUGIN_URL="https://github.com/crmne/omastats.git"
+OMASTATS_PLUGIN_ID="crmne.omastats"
+
 OMASETTINGS_PLUGIN_URL="https://github.com/twiking/omasettings.git"
 OMASETTINGS_PLUGIN_ID="io.github.twiking.omasettings"
 
@@ -171,7 +176,7 @@ HOST_FILES=(
 # different things (no fan control on a laptop, for instance), and neither
 # should have to re-answer the prompts on every run.
 BOOTSTRAP_CONF="${BOOTSTRAP_CONF:-$DOTFILES_DIR/bootstrap.conf}"
-MODULE_KEYS=(yubikey coolercontrol slack brave webapps airpods hyprmoncfg omasettings gaming herdr_nav work_repos work_setup nvim_default nvim_sync)
+MODULE_KEYS=(yubikey coolercontrol slack brave webapps airpods hyprmoncfg omasettings omastats gaming herdr_nav work_repos work_setup nvim_default nvim_sync)
 declare -A MODULE_ENABLED=()
 
 module_desc() {
@@ -184,6 +189,7 @@ module_desc() {
     airpods)       echo "AirPods bar widget (third-party shell plugin + compiled daemon)" ;;
     hyprmoncfg)    echo "Monitor profiles that auto-switch on hotplug (third-party plugin)" ;;
     omasettings)   echo "GUI settings window for Omarchy config (third-party plugin)" ;;
+    omastats)      echo "System monitor bar widget (third-party plugin)" ;;
     gaming)        echo "Steam, gamescope and the MangoHud overlay" ;;
     herdr_nav)     echo "C-h/j/k/l navigation between herdr panes and Neovim" ;;
     work_repos)    echo "Clone work repositories (age-encrypted manifest)" ;;
@@ -1142,6 +1148,29 @@ step_brave() {
   fi
 }
 
+step_omastats() {
+  enabled omastats || return 0
+  section "System monitor widget"
+
+  local dir="$HOME/.config/omarchy/plugins/$OMASTATS_PLUGIN_ID"
+  if [[ -d "$dir" ]]; then
+    ok "plugin present"
+  elif ! have omarchy; then
+    skip "omarchy not available"
+    return 0
+  elif acting "add plugin from $OMASTATS_PLUGIN_URL"; then
+    # Third-party QML declaring a service kind, so it runs inside the shell
+    # process continuously rather than only when its panel is open. --yes
+    # supplies the confirmation `omarchy plugin add` demands before running
+    # unsandboxed third-party code; that prompt is the reason this is its own
+    # opt-in module rather than something bootstrap does by default.
+    omarchy plugin add "$OMASTATS_PLUGIN_URL" --enable --yes && changed "plugin added" \
+      || fail "plugin add failed"
+  fi
+
+  note "A newly added plugin needs 'omarchy restart shell' before it renders."
+}
+
 step_omasettings() {
   enabled omasettings || return 0
   section "Settings GUI"
@@ -1664,6 +1693,7 @@ main() {
   step_airpods
   step_hyprmoncfg
   step_omasettings
+  step_omastats
   step_yubikey_ssh
   step_ssh_agent
   step_work_repos

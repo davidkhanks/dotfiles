@@ -39,6 +39,7 @@ own without re-answering every run.
 | `airpods` | third-party shell plugin plus its compiled `librepods` daemon |
 | `hyprmoncfg` | third-party plugin + AUR binary for auto-switching monitor profiles |
 | `omasettings` | third-party settings GUI for Omarchy config |
+| `omastats` | third-party system monitor bar widget (CPU/GPU/mem/net/temp) |
 | `gaming` | Steam, `gamescope`, MangoHud (off by default — large download) |
 | `herdr_nav` | `C-h/j/k/l` navigation between herdr panes and Neovim |
 | `work_repos` | `age` tooling, decrypting the manifest, cloning the repos |
@@ -50,9 +51,14 @@ Turning a module off removes its packages, services, kernel modules and host
 files from the run entirely — a laptop with `coolercontrol=no` never installs
 CoolerControl, never loads `nct6775`, and never touches `/etc`.
 
-The `airpods` module is separate because it installs a **third-party** shell
-plugin, whose QML runs inside the Omarchy shell process, and compiles a C++/Qt6
-daemon. Two behaviours are worth knowing: a newly added plugin does not render
+Each third-party plugin (`airpods`, `hyprmoncfg`, `omasettings`, `omastats`)
+is its own module because its QML runs **unsandboxed inside the long-lived
+`omarchy-shell` process** — `omarchy plugin add` refuses without `--yes` for
+exactly that reason, and three of them declare a `service` kind so they run
+continuously rather than only when opened. A crash there takes the bar and
+notifications with it, so each one is an explicit opt-in rather than a default.
+
+The `airpods` module additionally compiles a C++/Qt6 daemon. Two behaviours are worth knowing: a newly added plugin does not render
 until `omarchy restart shell`, and the widget hides itself unless AirPods are
 connected (`omarchy bar set <id> hideWhenDisconnected false --json` pins it).
 
