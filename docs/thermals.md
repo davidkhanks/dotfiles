@@ -115,26 +115,78 @@ smoothing buys nothing there, but once it does engage you want it immediate.
 | fan2 | ~810 | 549 |
 | fan3 | ~1400 | **818** (its floor) |
 
-## Open risk — not yet validated
+## Validated under load (2026-09-20)
 
-**`fan3` is pinned to its floor until 95°C by explicit choice**, leaving only
-5°C before Tjmax. That removes `fan3` from normal cooling entirely; `fan2` and
-the case pair must carry everything, and `fan2` maxes out at 85°C / 1700 RPM.
+`fan3` is pinned to its floor until 95°C by explicit choice, which removes it
+from normal cooling entirely: `fan2` and the case pair must carry everything.
+That design was unproven above ~42°C until this session.
 
-**These curves are unproven above ~42°C.** They have never been tested under
-sustained load. Before trusting them for a long gaming session or compile, run:
+Measured over 20 minutes of HITMAN 3 under Proton — 397 samples at 3s
+intervals, GPU averaging 195W:
 
-```bash
-thermal-log 1200 ~/gaming.csv     # then play something for 20 minutes
+| Metric | min | mean | max |
+|---|---|---|---|
+| `cpu_c` | 60 | 74.9 | **89** |
+| `gpu_c` | 57 | 75.9 | 80 |
+| `gpu_w` | 39.6 | 194.9 | 219.6 |
+| `fan1_duty` | 41 | 71.5 | 76 |
+| `fan2_duty` | 47 | 69.8 | 87 |
+| `fan3_duty` | **14** | **14** | **14** |
+
+**`fan3` never left its floor** — 0 of 397 samples above 14% duty. The 95°C
+release point was never approached; the CPU peaked at 89°C and never reached
+90. The quiet-secondary design holds under the workload it was built for.
+
+**The system reaches equilibrium rather than creeping.** Per 5-minute block,
+loaded samples only (`gpu_w > 150`):
+
+| Block | CPU avg | CPU max | GPU avg | `fan2` |
+|---|---|---|---|---|
+| 0–5 min | 73.9 | 84 | 77.3 | 64.5% |
+| 5–10 min | 77.2 | 89 | 77.8 | 72.4% |
+| 10–15 min | 77.4 | 89 | 77.5 | 73.9% |
+| 15–20 min | 75.5 | 87 | 77.3 | 73.4% |
+
+It climbs ~3°C over the first ten minutes and then plateaus — the last block is
+cooler than the two before it. `fan2` settles near 73% with 13 points of duty
+still unused, so the curve holds reserve even at its worst moment. The GPU sits
+flat at ~77.5°C against a ~83°C throttle point.
+
+### Transient spikes are the smoothing, not the curve
+
+7 samples (1.8%) reached 85°C. All are single-interval spikes on a load
+transition: a loading screen drops GPU draw, the fans wind down, and a CPU
+burst lands before they recover.
+
+```
+t=421  cpu=71  gpu_w=206  fan1=43%  fan2=54%
+t=424  cpu=72  gpu_w=216  fan1=43%  fan2=54%
+t=427  cpu=89  gpu_w=75   fan1=43%  fan2=54%   <- spike; fans still low
+t=430  cpu=79  gpu_w=220  fan1=54%  fan2=61%
+t=439  cpu=76  gpu_w=217  fan1=65%  fan2=81%
 ```
 
-and check where the CPU plateaus, whether `fan2` saturates, and whether 95°C is
-ever reached. The failure mode is thermal throttling, not damage — the CPU
-protects itself — but throttling under load is worth knowing about.
+`CPU Main` specifies 85°C → 100%, but `Smooth` carries `response_delay = 8`, so
+a temperature must hold roughly 8s before the duty moves. A 3-second spike is
+over before `fan2` is permitted to react. That is the function behaving as
+configured, not a curve error.
 
-A synthetic CPU-only stress test is **not** a valid substitute: the case-fan
-curve has a GPU leg, and a 3070 pushing 220W into a mini-ITX case is most of the
-heat. A CPU-only test exercises none of that and would falsely reassure.
+**Do not lower `response_delay` to chase these.** It would make the fans surge
+on every load transition — precisely the noise the smoothing exists to prevent
+— for no thermal benefit, since 89°C sits 11°C below Tjmax. If the peaks ever
+do matter, raise the `CPU Main` knee instead (75°C → 80% rather than 70%) so a
+spike starts from a higher baseline.
+
+### Still unmeasured
+
+Sessions longer than 20 minutes, and ambient temperatures other than that
+evening's. Equilibrium arrived by minute 10 and held, so extended play is
+unlikely to differ, but it has not been observed.
+
+A synthetic CPU-only stress test remains **not** a valid substitute: the
+case-fan curve has a GPU leg, and a 3070 pushing 220W into a mini-ITX case is
+most of the heat. A CPU-only test exercises none of that and would falsely
+reassure.
 
 ## CoolerControl daemon API
 

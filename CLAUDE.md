@@ -165,7 +165,10 @@ Full detail in `docs/thermals.md` and `docs/yubikey-ssh.md`. The short version:
 - **`CPUTIN` reads −63°C.** Unwired header, ASRock quirk. Never use it as a fan
   curve source. Use `CPU Temp Package Id 0` or `PECI Agent 0`.
 - **`fan3` cannot stop.** Hard floor ~815 RPM at any duty including 0. It is the
-  thin secondary CPU fan and the loudest thing in the case.
+  thin secondary CPU fan and the loudest thing in the case. Its curve pins it
+  there until 95°C, and a 20-minute gaming session never moved it off the floor
+  (0 of 397 samples; peak CPU 89°C). Curves are validated to 89°C -- see
+  `docs/thermals.md`.
 - **The SSH key is PIV slot 9A, not FIDO2.** `ssh-keygen -K` asks for the wrong
   PIN and burns a FIDO2 attempt. PIV has **3** attempts; FIDO2 has 8 and a reset
   destroys credentials that have no backup. Never guess a PIN.
@@ -183,9 +186,6 @@ Full detail in `docs/thermals.md` and `docs/yubikey-ssh.md`. The short version:
 
 ## Unfinished
 
-- Fan curves are **unvalidated above ~42°C**. `fan3` is pinned to its floor
-  until 95°C by explicit user choice, leaving 5°C to Tjmax. Needs a real
-  workload logged with `thermal-log` before it can be trusted.
 - `gopls` is enabled but cannot install without the Go toolchain.
 - **Untested lid edge case on AC.** `hosts/panther/` sets
   `HandleLidSwitchExternalPower=ignore` so losing the external display in
