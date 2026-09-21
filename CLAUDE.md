@@ -47,7 +47,45 @@ specific added to it must be guarded, or it errors on every interactive shell
 on those boxes. `source "$OMARCHY_PATH/default/bash/rc"` was unguarded and did
 exactly that; it now tests `[[ -r ... ]]` first. The same applies to any new
 stow package that only makes sense under Omarchy — gate it in `step_stow`'s
-`case` on `have omarchy`, next to `hypr` and `omarchy`.
+`case` on `have omarchy`, next to `hypr` and `omarchy`. The `fish` package is
+gated the same way on `have fish`.
+
+**Anything added to `bash/.bashrc` is invisible on a fish machine.** fish
+never reads `.bashrc`, so an export or helper function added there exists on
+Omarchy and silently does not on the CachyOS desktop. This already bit
+`yk-reload` and `SSH_ASKPASS`: the agent, the socket, pcscd and the key were
+all healthy, and the only symptom was `yk-reload: command not found` in the
+login shell. When adding to `.bashrc`, ask whether it is bash sugar (stays put)
+or environment/a helper (mirror it in the `fish` package):
+
+| bash | fish |
+|---|---|
+| `export FOO=bar` in `.bashrc` | `set -gx FOO bar` in `fish/…/conf.d/<topic>.fish` |
+| `foo() { ...; }` in `.bashrc` | `fish/…/functions/foo.fish`, **named after the function** (fish autoloads by filename) |
+
+`aegis shell-init` is the known gap — it has a bash hook in `.bashrc` and no
+fish equivalent here, because whether `aegis shell-init fish` exists has never
+been checked. Verify before adding it; an init that errors runs on every shell.
+
+**Nothing but Omarchy's rc used to run `starship init`.** The `starship`
+package stowed a config that, off Omarchy, no shell ever read — installed,
+correct, and inert, with nothing reporting a problem. There are now two
+guarded inits and they must stay mutually exclusive:
+
+| Shell | Where | Guard |
+|---|---|---|
+| bash | `bash/.bashrc`, just below the Omarchy rc source | `[[ ! -r "${OMARCHY_PATH-}/default/bash/rc" ]]` — the exact negation of the source above it |
+| fish | `fish/.config/fish/conf.d/starship.fish` | `type -q starship` |
+
+Two inits means two prompt hooks, so do not weaken either guard. In bash the
+block must also stay **between** ble.sh's `--noattach` and `ble-attach`, for
+the same reason the rc does.
+
+**Do not rename `fish/.config/fish/conf.d/starship.fish`.** fish sources every
+`conf.d` — user, system and `vendor_conf.d` — as one alphabetically ordered
+list. `starship.fish` sorts after `pure.fish`, which is what keeps CachyOS's
+`fish-pure-prompt` from taking the prompt back. Any name sorting before `p`
+loses the prompt silently.
 
 ## Elevation
 
@@ -72,6 +110,18 @@ where the installer exits 0 but the package never landed. Both imply
 `--noconfirm`. Omarchy does not track AUR packages in a registry —
 `omarchy-update-aur-pkgs` just runs `yay -Sua` over `pacman -Qem` — so nothing
 is lost by installing outside the wrapper.
+
+**Do not assume an AUR helper exists.** The CachyOS desktop has neither `yay`
+nor `paru`, so anything routed through `step_aur_packages` there is skipped
+with a note and never installed. CoolerControl used to be exactly that: the
+package silently missing while `nct6775`, the service and the host files all
+reported success around the gap.
+
+Where a distro ships a package in its own repos, prefer that channel. Use
+`repo_has <pkg>` (a `pacman -Si` probe) to decide per machine rather than
+hardcoding one — `PKG_COOLERCONTROL` / `AUR_COOLERCONTROL` is the worked
+example, and the two call sites must stay complementary so the package is
+never requested from both.
 
 ## Omarchy writes through our symlinks
 
@@ -152,6 +202,32 @@ its config at runtime, so the live copy may hold tuning done in a GUI since the
 last capture. `bootstrap.sh` reports drift and leaves it; `--restore-host` is
 the explicit opt-in.
 
+**A CoolerControl config is keyed to UIDs, not to hardware.** A UID that does
+not match the running daemon's applies **nothing** — no error, no log line,
+fans left on the motherboard's own curves while the GUI looks correctly
+configured. Never copy a config between hosts without checking the UIDs first.
+
+**For `omarchy` ↔ `cachyos` specifically, that check has been done.** They are
+the same physical desktop, and on 2026-09-20 all seven UIDs the CachyOS daemon
+reported were byte-identical to the Omarchy copy, including the only three any
+profile depends on (`nct6791`, the RTX 3070, the i9-9900K). The two
+`config.toml` files are deliberately identical, so CoolerControl's UIDs are
+reproducible across distros on one machine. Re-verify after a hardware change
+rather than assuming it still holds:
+
+```bash
+journalctl -u coolercontrold.service -o cat \
+  | command grep -oE '"name":"[^"]+","uid":"[0-9a-f]{64}"' | sort -u
+```
+
+**The `[devices]` table lags the first start by one write.** The daemon writes
+`config.toml` before it finishes enumerating (config at `…:42`, `Initialization
+Complete` at `…:44`), so immediately after a first install that table is empty
+and a naive `host-config capture` would record a config with no devices in it.
+It is a generated comment block — "ANY CHANGES WILL BE OVERWRITTEN" — so this
+costs nothing, but do not read an empty `[devices]` as "the daemon found no
+hardware". Read the journal instead.
+
 ## Hardware facts that are easy to get wrong
 
 Full detail in `docs/thermals.md` and `docs/yubikey-ssh.md`. The short version:
@@ -174,8 +250,10 @@ Full detail in `docs/thermals.md` and `docs/yubikey-ssh.md`. The short version:
   destroys credentials that have no backup. Never guess a PIN.
 - **Never add `PKCS11Provider` to `~/.ssh/config`.** The module is loaded into
   `ssh-agent` instead. Both at once opens competing PIV sessions and signing
-  fails with `agent refused operation`. Keep `IdentitiesOnly` — the agent
-  offers six identities and the default `MaxAuthTries` is 6.
+  fails with `agent refused operation`. Keep `IdentitiesOnly` — the agent now
+  offers **seven** identities (slot 9A, five retired slots, attestation)
+  against a default `MaxAuthTries` of 6, so it is over the limit rather than
+  exactly at it. Re-count with `ssh-add -l` rather than trusting this number.
 - **The `-P` whitelist needs `libykcs11.so*`, not `libykcs11*.so`.** OpenSSH
   canonicalises to `libykcs11.so.2.7.3`, which a trailing-`.so` pattern cannot
   match; `ssh-add -s` then fails with `agent refused operation` despite a

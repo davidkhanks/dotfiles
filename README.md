@@ -32,7 +32,7 @@ own without re-answering every run.
 | Module | Covers |
 |---|---|
 | `yubikey` | libfido2/ykman/pcscd, `~/.ssh/config`, public key export |
-| `coolercontrol` | `coolercontrol-bin`, `nct6775`, the daemon, `hosts/<host>/` config |
+| `coolercontrol` | `coolercontrol` (repo) or `coolercontrol-bin` (AUR), `nct6775`, the daemon, `hosts/<host>/` config |
 | `slack` | `slack-desktop`, the Wayland desktop entry, MIME database |
 | `brave` | Brave via Omarchy's installer, set as the default browser |
 | `webapps` | launchers for sites with no Linux desktop app (Linear) |
@@ -86,8 +86,9 @@ a 32-bit Proton prefix without it.
 (and therefore a terminal for its sudo prompt) and lags the source tree.
 
 The stowed `.bashrc` sources it in **two parts, and the order is not optional**:
-early with `--noattach`, before Omarchy's rc runs `starship init bash`, then
-`ble-attach` as the last line of the file once every prompt hook is registered.
+early with `--noattach`, before whichever line runs `starship init bash`
+(Omarchy's rc, or the guarded fallback below it), then `ble-attach` as the last
+line of the file once every prompt hook is registered.
 Attaching first, or sourcing after starship, leaves the two fighting over the
 display. Both lines are guarded, so a machine with `blesh=no` just gets a plain
 bash line editor.
@@ -95,7 +96,7 @@ bash line editor.
 ## Non-Omarchy machines
 
 This runs on any Arch derivative, not only Omarchy — the case it was built for
-is a CachyOS box used purely for gaming. Four things make that work, none of
+is a CachyOS box used purely for gaming. Six things make that work, none of
 which need a flag:
 
 - **Preflight accepts derivatives.** `/etc/arch-release` is tried first, then
@@ -107,19 +108,67 @@ which need a flag:
 - **AUR installs use `yay` or `paru`,** whichever is present — Omarchy ships the
   first, CachyOS the second. With neither, the step skips and names the packages
   it did not install.
+- **CoolerControl comes from the repos where the distro has it.** CachyOS
+  packages `coolercontrol` + `coolercontrold` in its own `cachyos` repo; Arch
+  and Omarchy only have the AUR. `step_packages` prefers the repo package when
+  `pacman -Si` resolves it and `step_aur_packages` falls back to
+  `coolercontrol-bin` when it does not, so the module needs no AUR helper on
+  CachyOS — which matters, because a CachyOS install has neither by default.
 - **`PACKAGES_CORE` installs the base tools** (`git starship tmux fzf neovim`)
   rather than assuming Omarchy's base image already provided them. On Omarchy
   that is a no-op.
+- **`fish` is stowed where fish is installed.** Auto-detected like
+  `hypr`/`omarchy`. It carries the parts of `bash/.bashrc` that are not bash
+  sugar — the starship init, the ssh-agent environment and `yk-reload` — since
+  fish never reads `.bashrc`.
 
 Everything else is already gated. For a gaming-only box, turn off the
 Omarchy-flavoured modules in `bootstrap.conf` (`brave`, `webapps`, `airpods`,
 `hyprmoncfg`, `omasettings`, `omastats`, `herdr_nav`, `slack`) and leave
-`gaming` and `coolercontrol` on. What is left is stow, bash, starship, tmux,
-nvim and the fan curves.
+`gaming` and `coolercontrol` on. What is left is stow, the shell config,
+starship, tmux, nvim and the fan curves.
 
 Note that fan curves are keyed by hostname under `hosts/<hostname>/`, so a
 second distro on the same desktop needs either the same hostname or its own
-directory — `hosts/omarchy/` will not be found under a new one.
+directory — `hosts/omarchy/` will not be found under a new one. The CachyOS
+install on this desktop is `hosts/cachyos/` for exactly that reason.
+
+### Who runs `starship init`
+
+On Omarchy, `default/bash/rc` does, and the repo relied on that entirely — so
+on any other machine `~/.config/starship.toml` got stowed and then read by
+nothing. Two guarded inits fix that, and both are no-ops where they should be:
+
+| Shell | Init | Guard |
+|---|---|---|
+| bash | `bash/.bashrc` | skipped when Omarchy's rc is readable, since that runs it |
+| fish | `fish/.config/fish/conf.d/starship.fish` | skipped when `starship` is not installed |
+
+### What else the `fish` package carries
+
+`.bashrc` is stowed on a fish machine and then never read, so anything in it
+that is not bash-specific has a fish counterpart:
+
+| `bash/.bashrc` | `fish/` |
+|---|---|
+| `starship init bash` (guarded) | `conf.d/starship.fish` |
+| `SSH_AUTH_SOCK`, `SSH_ASKPASS` exports | `conf.d/ssh-agent.fish` |
+| `yk-reload()` | `functions/yk-reload.fish` |
+| `ble.sh`, fzf integration | — bash line editor, no fish equivalent needed |
+| `aegis shell-init bash` | — not ported; see `CLAUDE.md` |
+
+`SSH_AUTH_SOCK` is also set by `ssh/.config/environment.d/10-ssh-agent.conf`
+for every process systemd's user manager starts. That file is the general fix
+but it is read when `systemd --user` starts, so the session you are in when
+`bootstrap.sh` first stows it does not have the variable and opening a new
+terminal will not bring it back — only the next login does. `conf.d/ssh-agent.fish`
+makes the shell correct immediately instead.
+
+The fish prompt file's **name** matters. fish sources every `conf.d` directory — the
+user's, the system's and `vendor_conf.d` — as one alphabetically ordered list,
+and `starship.fish` sorts after `pure.fish`, so CachyOS's `fish-pure-prompt`
+cannot take the prompt back. Renaming it to anything sorting before `p` would
+give the prompt away silently.
 
 Genuinely Omarchy-only, and not worth porting: the bar widgets in
 `~/.config/omarchy/shell.json`, the plugin system, and the theme hooks feeding
@@ -130,6 +179,7 @@ nvim's colorscheme (which already falls back to onedark on its own).
 ```
 bootstrap.sh          idempotent setup script
 bin/                  scripts -> ~/.local/bin
+fish/                 fish conf.d + functions (starship, ssh-agent, yk-reload)
 hypr/                 Hyprland keybindings
 nvim/                 Neovim config (davidkhanks-nvim)
 omarchy/              Omarchy branding + hooks
@@ -175,6 +225,11 @@ the file to that module so turning it off removes the file from the run too.
 - `hosts/omarchy/` — CoolerControl's fan curves, gated on `coolercontrol`.
   **Not portable**: the config embeds hardware-derived device UIDs and curves
   tuned to that box's fans. See `docs/thermals.md`.
+- `hosts/cachyos/` — the CachyOS install on the **same desktop** as
+  `hosts/omarchy/`. Its CoolerControl config is deliberately **not** checked in
+  yet: the device UIDs must be generated locally and compared against the
+  Omarchy copy before the curves are lifted over, because a mismatched UID
+  applies nothing and reports no error. See that directory's README.
 - `hosts/panther/` — a logind drop-in setting
   `HandleLidSwitchExternalPower=ignore`, so losing the external display in
   clamshell mode does not suspend the laptop while it is on AC. logind resolves

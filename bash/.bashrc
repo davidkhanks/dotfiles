@@ -27,6 +27,23 @@
 # single interactive shell.
 [[ -r "${OMARCHY_PATH-}/default/bash/rc" ]] && source "$OMARCHY_PATH/default/bash/rc"
 
+# --- starship ---------------------------------------------------------------
+# Omarchy's rc (just above) runs `starship init bash` itself. Nothing does on a
+# non-Omarchy machine, so before this the stowed ~/.config/starship.toml was
+# installed on every box and read on exactly one of them -- the config was
+# there, the prompt was the plain bash default, and nothing reported a problem.
+#
+# The guard is the same test as the source above, deliberately: if that line
+# fired, starship is already initialised and doing it twice would register two
+# PROMPT_COMMAND hooks.
+#
+# Position matters for the same reason the rc does. This must stay AFTER the
+# ble.sh --noattach near the top of the file and BEFORE ble-attach at the very
+# bottom; starship installs a prompt hook, and ble.sh has to see it.
+if [[ ! -r "${OMARCHY_PATH-}/default/bash/rc" ]] && command -v starship >/dev/null 2>&1; then
+  eval "$(starship init bash)"
+fi
+
 # --- ble.sh x fzf ------------------------------------------------------------
 # Omarchy's default/bash/init sources fzf's raw completion.bash and
 # key-bindings.bash unconditionally. ble.sh's manual is explicit that fzf

@@ -29,7 +29,7 @@ DOTFILES_REPO="${DOTFILES_REPO:-https://github.com/davidkhanks/dotfiles.git}"
 DOTFILES_DIR="${DOTFILES_DIR:-$HOME/dotfiles}"
 
 # Stow packages, in the order they should be applied.
-STOW_PACKAGES=(bash bin hypr nvim omarchy slack ssh starship tmux)
+STOW_PACKAGES=(bash bin fish hypr nvim omarchy slack ssh starship tmux)
 
 # Pacman packages this setup depends on.
 #   stow             -- symlink farm manager for the dotfiles
@@ -72,10 +72,26 @@ PACKAGES_GAMING=(steam gamescope mangohud lib32-mangohud)
 # purpose -- yay shows PKGBUILDs for review and needs your sudo password, and
 # it must never be run as root.
 #   slack-desktop     -- official native Slack client
-#   coolercontrol-bin -- prebuilt CoolerControl; the plain `coolercontrol`
+#   coolercontrol-bin -- prebuilt CoolerControl; the plain AUR `coolercontrol`
 #                        package compiles a Tauri app for 10-20 minutes
 AUR_SLACK=(slack-desktop)
 AUR_COOLERCONTROL=(coolercontrol-bin)
+
+# CoolerControl in the official repos, where the distro ships it.
+#
+# CachyOS packages it in its own `cachyos` repo (`coolercontrol` plus the
+# `coolercontrold` daemon it depends on); Omarchy and plain Arch do not, and
+# have to go to the AUR. Which channel to use is therefore a per-machine
+# question, not a constant -- `step_packages` prefers this when `pacman -Si`
+# resolves it and `step_aur_packages` falls back to AUR_COOLERCONTROL when it
+# does not.
+#
+# This is what makes the module work on a box with no AUR helper at all. The
+# CachyOS desktop has neither yay nor paru, so hardcoding the AUR name meant
+# `step_aur_packages` skipped, printed a note, and CoolerControl never got
+# installed -- with every other part of the module (nct6775, the service, the
+# host files) reporting success around the gap.
+PKG_COOLERCONTROL=coolercontrol
 
 # Third-party Omarchy shell plugin providing an AirPods bar widget. `plugin add`
 # only clones files; the plugin's own `setup` script compiles a C++/Qt6 daemon
@@ -339,6 +355,11 @@ acting() {
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# Is this package available from a configured pacman repository? Used to pick
+# between a repo package and its AUR equivalent per distro. Output is discarded
+# rather than piped, so there is no `grep -q` SIGPIPE race under pipefail.
+repo_has() { pacman -Si "$1" >/dev/null 2>&1; }
+
 # Back up a path that exists and is not already the symlink we want.
 backup_path() {
   local path="$1" stamp
@@ -407,6 +428,13 @@ step_packages() {
   enabled work_repos && want+=("${PACKAGES_AGE[@]}")
   enabled gaming     && want+=("${PACKAGES_GAMING[@]}")
   enabled work_setup && want+=("${PACKAGES_WORK[@]}")
+  # Prefer the repo package where the distro has one (CachyOS); otherwise this
+  # stays empty and step_aur_packages picks it up instead. Spelled as an `if`
+  # rather than extending the `&&` column above only because it is two
+  # conditions, matching the `if acting ...; then` convention used elsewhere.
+  if enabled coolercontrol && repo_has "$PKG_COOLERCONTROL"; then
+    want+=("$PKG_COOLERCONTROL")
+  fi
   local missing=()
   for p in "${want[@]}"; do
     pacman -Qq "$p" >/dev/null 2>&1 || missing+=("$p")
@@ -439,8 +467,13 @@ step_aur_packages() {
   section "AUR packages"
   local -a want=()
   enabled slack         && want+=("${AUR_SLACK[@]}")
-  enabled coolercontrol && want+=("${AUR_COOLERCONTROL[@]}")
   enabled hyprmoncfg    && want+=("${AUR_HYPRMONCFG[@]}")
+  # Only when the distro has no repo package -- step_packages already took it
+  # from `cachyos` otherwise, and asking the AUR for a second copy would drag
+  # in a helper this machine may not have.
+  if enabled coolercontrol && ! repo_has "$PKG_COOLERCONTROL"; then
+    want+=("${AUR_COOLERCONTROL[@]}")
+  fi
   if (( ${#want[@]} == 0 )); then
     skip "no AUR packages selected"
     return 0
@@ -532,6 +565,11 @@ step_stow() {
       # answers stay valid -- same test step_bar_settings and step_own_plugins
       # already use.
       hypr|omarchy) have omarchy || { skip "$pkg (not an Omarchy system)"; continue; } ;;
+      # Only useful where fish is actually installed -- it is the login shell
+      # on the CachyOS desktop and absent on Omarchy. Auto-detected rather
+      # than made a module, same as hypr/omarchy above, so existing
+      # bootstrap.conf answers stay valid.
+      fish) have fish || { skip "$pkg (fish not installed)"; continue; } ;;
     esac
     if [[ ! -d "$DOTFILES_DIR/$pkg" ]]; then
       fail "package '$pkg' missing from repo"
