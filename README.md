@@ -263,6 +263,7 @@ left/right/middle and emits `pressed(int button)`. A new plugin needs
 - [`docs/laptop-thermals.md`](docs/laptop-thermals.md) — clamshell throttling, DPTF skin-temperature limits
 - [`docs/yubikey-ssh.md`](docs/yubikey-ssh.md) — YubiKey PIV SSH setup
 - [`docs/neovim.md`](docs/neovim.md) — Neovim config and plugin pinning
+- [`docs/multi-os.md`](docs/multi-os.md) — planned macOS support, and why not chezmoi
 - [`hosts/omarchy/README.md`](hosts/omarchy/README.md) — this desktop's specifics
 
 ## This repo is public

@@ -201,6 +201,14 @@ Full detail in `docs/thermals.md` and `docs/yubikey-ssh.md`. The short version:
   `journalctl -b | grep -iE 'PM: suspend (entry|exit)|Lid (opened|closed)'`.
   Two `suspend entry` lines means closing the lid woke it and the rule needs
   narrowing; one means it behaved.
+- **macOS support is designed but not built.** An existing MacBook stays in
+  occasional use and wants the same tool set. The plan, the measurement it
+  rests on (36 of 65 tracked files are already OS-agnostic; exactly one file,
+  `bash/.bashrc`, genuinely varies) and a recorded evaluation of chezmoi are in
+  `docs/multi-os.md`. Two things to keep in mind before touching this: the
+  portable surface needs **no** templating, and **nothing should generate
+  files** — Omarchy writes through the stow symlinks into this repo, which only
+  works while a symlink points at real tracked content.
 - **Wake-on-LAN is not armed** on the laptop's USB ethernet adapter (Realtek
   `0bda:8153`). Closing the lid on battery suspends to s2idle, and plugging in
   AC cannot wake it — `ACAD` exposes no `wakeup` attribute at all. The only
