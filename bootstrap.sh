@@ -40,7 +40,11 @@ STOW_PACKAGES=(bash bin hypr nvim omarchy slack ssh starship tmux)
 #   pcsclite         -- PC/SC daemon; PIV/CCID access needs it running
 #   age              -- decrypts the work-repo manifest (secrets/*.age)
 #   age-plugin-yubikey -- lets age use the YubiKey PIV retired-slot identities
-PACKAGES_CORE=(stow)
+#   git/starship/tmux/fzf/neovim -- shipped by Omarchy's base install, so this
+#                       is a no-op there (--needed). Listed because their stowed
+#                       configs are applied on EVERY machine, including
+#                       non-Omarchy ones where nothing else would pull them in.
+PACKAGES_CORE=(stow git starship tmux fzf neovim)
 #   lxqt-openssh-askpass -- Wayland-native GUI PIN prompt for the hotplug
 #                           reload; gcr-ssh-askpass refuses to run standalone
 PACKAGES_YUBIKEY=(libfido2 yubikey-manager yubico-piv-tool pcsclite lxqt-openssh-askpass)
@@ -379,10 +383,20 @@ ensure_link() {
 
 step_preflight() {
   section "Preflight"
-  [[ -f /etc/arch-release ]] || die "This script targets Arch/Omarchy."
+  # Arch derivatives do not all ship /etc/arch-release, so fall back to
+  # os-release. CachyOS is the case this exists for; ID_LIKE carries "arch".
+  local os_id="" os_like="" pretty="Arch"
+  if [[ -r /etc/os-release ]]; then
+    os_id="$(. /etc/os-release && printf '%s' "${ID-}")"
+    os_like="$(. /etc/os-release && printf '%s' "${ID_LIKE-}")"
+    pretty="$(. /etc/os-release && printf '%s' "${PRETTY_NAME-${NAME-Arch}}")"
+  fi
+  if [[ ! -f /etc/arch-release && $os_id != arch && $os_like != *arch* ]]; then
+    die "This script targets Arch and its derivatives (Omarchy, CachyOS)."
+  fi
   (( EUID != 0 )) || die "Run as your normal user, not root (it calls sudo where needed)."
   have sudo || die "sudo not found."
-  ok "Arch system, running as $USER"
+  ok "$pretty, running as $USER"
 }
 
 step_packages() {
@@ -423,17 +437,28 @@ step_packages() {
 
 step_aur_packages() {
   section "AUR packages"
-  if ! have yay; then
-    note "yay not found; skipped AUR packages: ${AUR_PACKAGES[*]}"
-    skip "yay not installed"
-    return 0
-  fi
   local -a want=()
   enabled slack         && want+=("${AUR_SLACK[@]}")
   enabled coolercontrol && want+=("${AUR_COOLERCONTROL[@]}")
   enabled hyprmoncfg    && want+=("${AUR_HYPRMONCFG[@]}")
   if (( ${#want[@]} == 0 )); then
     skip "no AUR packages selected"
+    return 0
+  fi
+  # Omarchy ships yay, CachyOS ships paru. The flags below are common to both.
+  # Choosing what we want BEFORE probing for a helper is deliberate: it lets
+  # the skip message name the packages that were actually missed. (It used to
+  # print ${AUR_PACKAGES[*]}, an array that has never existed, so the message
+  # listed nothing at all.)
+  local helper=""
+  if have yay; then
+    helper=yay
+  elif have paru; then
+    helper=paru
+  fi
+  if [[ -z $helper ]]; then
+    note "no AUR helper (yay/paru) found; skipped AUR packages: ${want[*]}"
+    skip "no AUR helper installed"
     return 0
   fi
   local missing=()
@@ -448,12 +473,12 @@ step_aur_packages() {
   # Omarchy's wrapper adds a post-install `pacman -Q` verification pass, which
   # catches the case where yay exits 0 but the package is not actually there.
   # Note it hardcodes --noconfirm, so PKGBUILDs are NOT shown. To review one
-  # first, run `yay -S <pkg>` by hand before running this script; the step then
-  # sees it as present and skips it.
+  # first, run `yay -S <pkg>` (or `paru -S <pkg>`) by hand before running this
+  # script; the step then sees it as present and skips it.
   if have omarchy-pkg-aur-add; then
     omarchy-pkg-aur-add "${missing[@]}"
   else
-    yay -S --needed --noconfirm "${missing[@]}"
+    "$helper" -S --needed --noconfirm "${missing[@]}"
   fi
   changed "installed from AUR: ${missing[*]}"
 }
@@ -501,6 +526,12 @@ step_stow() {
     # A couple of packages only make sense when their module is enabled.
     case "$pkg" in
       slack) enabled slack || { skip "$pkg (module off)"; continue; } ;;
+      # Hyprland config and Omarchy branding/hooks have nothing to attach to on
+      # a non-Omarchy box that shares this repo (the CachyOS gaming machine).
+      # Auto-detected rather than made a module so existing bootstrap.conf
+      # answers stay valid -- same test step_bar_settings and step_own_plugins
+      # already use.
+      hypr|omarchy) have omarchy || { skip "$pkg (not an Omarchy system)"; continue; } ;;
     esac
     if [[ ! -d "$DOTFILES_DIR/$pkg" ]]; then
       fail "package '$pkg' missing from repo"

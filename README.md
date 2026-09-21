@@ -92,6 +92,39 @@ Attaching first, or sourcing after starship, leaves the two fighting over the
 display. Both lines are guarded, so a machine with `blesh=no` just gets a plain
 bash line editor.
 
+## Non-Omarchy machines
+
+This runs on any Arch derivative, not only Omarchy — the case it was built for
+is a CachyOS box used purely for gaming. Four things make that work, none of
+which need a flag:
+
+- **Preflight accepts derivatives.** `/etc/arch-release` is tried first, then
+  `ID=arch` or an `ID_LIKE` containing `arch` from `/etc/os-release`. CachyOS
+  passes on the second test.
+- **`hypr` and `omarchy` are not stowed** when the `omarchy` command is absent;
+  their configs have nothing to attach to. Auto-detected rather than made a
+  module, so existing `bootstrap.conf` answers stay valid.
+- **AUR installs use `yay` or `paru`,** whichever is present — Omarchy ships the
+  first, CachyOS the second. With neither, the step skips and names the packages
+  it did not install.
+- **`PACKAGES_CORE` installs the base tools** (`git starship tmux fzf neovim`)
+  rather than assuming Omarchy's base image already provided them. On Omarchy
+  that is a no-op.
+
+Everything else is already gated. For a gaming-only box, turn off the
+Omarchy-flavoured modules in `bootstrap.conf` (`brave`, `webapps`, `airpods`,
+`hyprmoncfg`, `omasettings`, `omastats`, `herdr_nav`, `slack`) and leave
+`gaming` and `coolercontrol` on. What is left is stow, bash, starship, tmux,
+nvim and the fan curves.
+
+Note that fan curves are keyed by hostname under `hosts/<hostname>/`, so a
+second distro on the same desktop needs either the same hostname or its own
+directory — `hosts/omarchy/` will not be found under a new one.
+
+Genuinely Omarchy-only, and not worth porting: the bar widgets in
+`~/.config/omarchy/shell.json`, the plugin system, and the theme hooks feeding
+nvim's colorscheme (which already falls back to onedark on its own).
+
 ## Layout
 
 ```

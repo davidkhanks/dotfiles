@@ -20,7 +20,12 @@
 
 # All the default Omarchy aliases and functions
 # (don't mess with these directly, just overwrite them here!)
-source "$OMARCHY_PATH/default/bash/rc"
+#
+# Guarded because this file is stowed on non-Omarchy machines too (the CachyOS
+# gaming box). There OMARCHY_PATH is unset, line 2 above never fires, and an
+# unguarded source expands to "/default/bash/rc" -- an error printed on every
+# single interactive shell.
+[[ -r "${OMARCHY_PATH-}/default/bash/rc" ]] && source "$OMARCHY_PATH/default/bash/rc"
 
 # --- ble.sh x fzf ------------------------------------------------------------
 # Omarchy's default/bash/init sources fzf's raw completion.bash and

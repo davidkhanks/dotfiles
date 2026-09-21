@@ -42,6 +42,13 @@ They error on ordinary flags (`grep -q` → `unknown option '-G'`). Inside the
 Bash tool use `command grep` / `command sed` / `command find`. Scripts run via
 `bash script.sh` get the real binaries, so this affects ad-hoc commands only.
 
+**`bash/.bashrc` is stowed on non-Omarchy machines too.** Anything Omarchy-
+specific added to it must be guarded, or it errors on every interactive shell
+on those boxes. `source "$OMARCHY_PATH/default/bash/rc"` was unguarded and did
+exactly that; it now tests `[[ -r ... ]]` first. The same applies to any new
+stow package that only makes sense under Omarchy — gate it in `step_stow`'s
+`case` on `have omarchy`, next to `hypr` and `omarchy`.
+
 ## Elevation
 
 There is **no passwordless sudo**. Interactive `sudo` hangs in a non-TTY
