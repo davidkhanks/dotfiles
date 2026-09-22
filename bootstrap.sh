@@ -1016,11 +1016,18 @@ HERDR_KEY_SETS=(
 )
 
 #   <option key>|<binding to append>
+#
+# zoom keeps herdr's own prefix+z and gains prefix+m as well -- muscle memory
+# from tmux, where the maximize binding sat on m. Appended rather than replaced
+# so both spellings work and the help popup lists them together. This only
+# lands if zoom is already a list; on a config where it is still herdr's plain
+# string the step says so and leaves the file alone.
 HERDR_KEY_APPENDS=(
   "previous_workspace|alt+k"
   "next_workspace|alt+j"
   "previous_tab|alt+h"
   "next_tab|alt+l"
+  "zoom|prefix+m"
 )
 
 step_herdr_keys() {
