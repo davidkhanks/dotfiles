@@ -26,6 +26,8 @@ ROOT="$DOTFILES/hosts/$HOST"
 FILES=(
   "etc/coolercontrol/config.toml"
   "etc/systemd/logind.conf.d/30-lid-external-power.conf"
+  "etc/systemd/system/mnt-spartacus-6TB_Storage.mount"
+  "etc/systemd/system/mnt-spartacus-6TB_Storage.automount"
 )
 
 usage() { sed -n '3,12p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }

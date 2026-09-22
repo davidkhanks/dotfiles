@@ -42,6 +42,8 @@ own without re-answering every run.
 | `omastats` | third-party system monitor bar widget (CPU/GPU/mem/net/temp) |
 | `blesh` | `ble.sh` — fish-style autosuggestions and highlighting for bash |
 | `gaming` | Steam, `gamescope`, MangoHud (off by default — large download) |
+| `tailscale` | `tailscale`, `tailscaled`, Taildrop receiver, Omarchy's **first-party** bar widget, admin-console web app |
+| `smb_shares` | `cifs-utils`, mount points and systemd **automount** units for SMB shares on tailnet machines (off by default — needs a machine-local credentials file) |
 | `herdr_nav` | `C-h/j/k/l` navigation between herdr panes and Neovim |
 | `work_repos` | `age` tooling, decrypting the manifest, cloning the repos |
 | `work_setup` | dev environment: `aws-cli-v2`, local tools, worktrees, container homes, images |
@@ -230,7 +232,8 @@ the file to that module so turning it off removes the file from the run too.
   yet: the device UIDs must be generated locally and compared against the
   Omarchy copy before the curves are lifted over, because a mismatched UID
   applies nothing and reports no error. See that directory's README.
-- `hosts/panther/` — a logind drop-in setting
+- `hosts/panther/` — SMB automount units for the shares on `spartacus`, gated
+  on `smb_shares`; and a logind drop-in setting
   `HandleLidSwitchExternalPower=ignore`, so losing the external display in
   clamshell mode does not suspend the laptop while it is on AC. logind resolves
   a lid close as docked → external power → default, and the middle rule is
@@ -319,6 +322,8 @@ left/right/middle and emits `pressed(int button)`. A new plugin needs
 - [`docs/yubikey-ssh.md`](docs/yubikey-ssh.md) — YubiKey PIV SSH setup
 - [`docs/neovim.md`](docs/neovim.md) — Neovim config and plugin pinning
 - [`docs/multi-os.md`](docs/multi-os.md) — planned macOS support, and why not chezmoi
+- [`docs/vpn.md`](docs/vpn.md) — Tailscale setup, and the open VPN.ac coexistence question
+- [`docs/smb-shares.md`](docs/smb-shares.md) — mounting Windows shares over the tailnet, and decoding `NT_STATUS_*` failures
 - [`hosts/omarchy/README.md`](hosts/omarchy/README.md) — this desktop's specifics
 
 ## This repo is public

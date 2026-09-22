@@ -1,0 +1,13 @@
+# Enable THIS unit, not the .mount. Mounts on first access to the path and
+# unmounts again once idle, so a laptop that is off the tailnet simply fails
+# the access instead of stalling at boot.
+[Unit]
+Description=Automount SMB share 6TB_Storage on spartacus
+After=tailscaled.service
+
+[Automount]
+Where=/mnt/spartacus/6TB_Storage
+TimeoutIdleSec=180
+
+[Install]
+WantedBy=multi-user.target

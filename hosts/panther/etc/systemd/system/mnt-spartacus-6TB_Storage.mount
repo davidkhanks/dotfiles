@@ -1,0 +1,30 @@
+# SMB share on spartacus (Windows, reachable over Tailscale).
+#
+# Paired with mnt-spartacus-6TB_Storage.automount, which is the unit that is
+# actually enabled: this one is pulled in on first access to the mount point
+# and released again after the idle timeout. Enabling THIS unit directly would
+# mount at boot, which is wrong for a laptop -- the share is only reachable
+# when tailscaled is up and spartacus is online, and a boot-time CIFS mount
+# that cannot reach its server stalls the boot and hangs `df`.
+[Unit]
+Description=SMB share 6TB_Storage on spartacus
+Documentation=man:mount.cifs(8)
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Mount]
+# The short name resolves through MagicDNS (link tailscale0 carries the search
+# domain), which keeps the tailnet identifier out of this file. It only works
+# while `tailscale set --accept-dns` is true; with MagicDNS off, use the
+# 100.x address instead.
+What=//spartacus/6TB_Storage
+Where=/mnt/spartacus/6TB_Storage
+Type=cifs
+# credentials= keeps the password out of this unit -- the unit is tracked in
+# the dotfiles repo, which is public. The credentials file is machine-local,
+# root-owned and mode 600, and is never committed.
+Options=credentials=/etc/samba/credentials/spartacus,uid=1000,gid=1000,file_mode=0644,dir_mode=0755,iocharset=utf8,vers=3.1.1,nofail,_netdev,noatime
+TimeoutSec=20
+
+[Install]
+WantedBy=multi-user.target

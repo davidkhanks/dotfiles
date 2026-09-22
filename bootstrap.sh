@@ -67,6 +67,15 @@ PACKAGES_WORK=(aws-cli-v2)
 #   steam          -- listed so a rebuild restores it; already present here.
 # Needs [multilib] for the lib32-* packages, which Omarchy enables by default.
 PACKAGES_GAMING=(steam gamescope mangohud lib32-mangohud)
+#   tailscale -- mesh VPN. Omarchy has first-party support for this (a bar
+#                widget, a Taildrop receive service and an installer script),
+#                so step_tailscale reproduces what
+#                `omarchy-install-service-tailscale` does rather than inventing
+#                its own arrangement.
+PACKAGES_TAILSCALE=(tailscale)
+#   cifs-utils -- mount.cifs, for SMB shares on other tailnet machines
+#   keyutils   -- kernel keyring, used by cifs for credential caching
+PACKAGES_SMB=(cifs-utils keyutils)
 
 # AUR packages, installed with yay (Omarchy ships it). Left interactive on
 # purpose -- yay shows PKGBUILDs for review and needs your sudo password, and
@@ -118,7 +127,12 @@ BRAVE_DESKTOP_ID="brave-browser.desktop"
 # under /static/ with a cache-busting query string).
 WEBAPPS=(
   "Linear|https://linear.app|https://linear.app/static/apple-touch-icon.png?v=2"
+  "Tailscale|https://login.tailscale.com/admin/machines|https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/tailscale-light.png"
 )
+
+# Omarchy's own id for the first-party Tailscale bar widget. It ships disabled.
+TAILSCALE_PLUGIN_ID="omarchy.tailscale"
+TAILSCALE_RECEIVE_UNIT="omarchy-tailscale-receive.service"
 
 # Bar widget properties. These live in ~/.config/omarchy/shell.json, which is
 # deliberately NOT tracked -- Omarchy rewrites it on every `omarchy bar`
@@ -196,6 +210,8 @@ SERVICES=(pcscd.socket coolercontrold.service)
 HOST_FILES=(
   "etc/coolercontrol/config.toml|coolercontrol"
   "etc/systemd/logind.conf.d/30-lid-external-power.conf|"
+  "etc/systemd/system/mnt-spartacus-6TB_Storage.mount|smb_shares"
+  "etc/systemd/system/mnt-spartacus-6TB_Storage.automount|smb_shares"
 )
 
 # Work repositories are described by a manifest kept OUTSIDE this repo, because
@@ -209,7 +225,7 @@ HOST_FILES=(
 # different things (no fan control on a laptop, for instance), and neither
 # should have to re-answer the prompts on every run.
 BOOTSTRAP_CONF="${BOOTSTRAP_CONF:-$DOTFILES_DIR/bootstrap.conf}"
-MODULE_KEYS=(yubikey coolercontrol slack brave webapps airpods hyprmoncfg omasettings omastats blesh gaming herdr_nav work_repos work_setup nvim_default nvim_sync)
+MODULE_KEYS=(yubikey coolercontrol slack brave webapps airpods hyprmoncfg omasettings omastats blesh gaming tailscale smb_shares herdr_nav work_repos work_setup nvim_default nvim_sync)
 declare -A MODULE_ENABLED=()
 
 module_desc() {
@@ -225,6 +241,8 @@ module_desc() {
     omastats)      echo "System monitor bar widget (third-party plugin)" ;;
     blesh)         echo "ble.sh: fish-style autosuggestions for bash" ;;
     gaming)        echo "Steam, gamescope and the MangoHud overlay" ;;
+    tailscale)     echo "Tailscale mesh VPN (daemon, Taildrop, bar widget, admin web app)" ;;
+    smb_shares)    echo "Automount SMB shares from other tailnet machines (needs a credentials file)" ;;
     herdr_nav)     echo "C-h/j/k/l navigation between herdr panes and Neovim" ;;
     work_repos)    echo "Clone work repositories (age-encrypted manifest)" ;;
     work_setup)    echo "Prepare the work dev environment (tools, worktrees, containers)" ;;
@@ -235,7 +253,9 @@ module_desc() {
 }
 # Anything hardware- or host-specific defaults to asking; nvim_sync is slow so
 # it defaults off.
-module_default() { case "$1" in nvim_sync|gaming) echo no ;; *) echo yes ;; esac; }
+# smb_shares defaults off: it is useless without a machine-local credentials
+# file that this repo deliberately does not carry.
+module_default() { case "$1" in nvim_sync|gaming|smb_shares) echo no ;; *) echo yes ;; esac; }
 
 enabled() { [[ "${MODULE_ENABLED[$1]:-no}" == yes ]]; }
 
@@ -427,6 +447,8 @@ step_packages() {
   enabled airpods    && want+=("${PACKAGES_AIRPODS[@]}")
   enabled work_repos && want+=("${PACKAGES_AGE[@]}")
   enabled gaming     && want+=("${PACKAGES_GAMING[@]}")
+  enabled tailscale  && want+=("${PACKAGES_TAILSCALE[@]}")
+  enabled smb_shares && want+=("${PACKAGES_SMB[@]}")
   enabled work_setup && want+=("${PACKAGES_WORK[@]}")
   # Prefer the repo package where the distro has one (CachyOS); otherwise this
   # stays empty and step_aur_packages picks it up instead. Spelled as an `if`
@@ -705,6 +727,7 @@ step_services() {
   local -a units=()
   enabled yubikey       && units+=(pcscd.socket)
   enabled coolercontrol && units+=(coolercontrold.service)
+  enabled tailscale     && units+=(tailscaled.service)
   if (( ${#units[@]} == 0 )); then
     skip "no services selected"
     return 0
@@ -734,6 +757,168 @@ step_services() {
       fi
     fi
   done
+}
+
+# SMB shares automounted from other machines on the tailnet. The units are
+# root-owned so they live in hosts/<hostname>/ and are installed by
+# step_host_files; this step creates the mount points and enables the
+# .automount units.
+#
+# The credentials file is deliberately NOT in this repo. It holds a plaintext
+# Windows password (mount.cifs requires plaintext at mount time, so encrypting
+# it would only move the problem), and this repo is public. It is machine-local
+# at SMB_CREDENTIALS, root-owned, mode 600. This step reports when it is
+# missing rather than inventing one -- same shape as the YubiKey steps.
+SMB_CREDENTIALS="/etc/samba/credentials/spartacus"
+# <automount unit>|<mount point>
+SMB_AUTOMOUNTS=(
+  "mnt-spartacus-6TB_Storage.automount|/mnt/spartacus/6TB_Storage"
+)
+
+# Nautilus sidebar entries for the mounts above. A kernel CIFS mount under /mnt
+# is not a "device", so Nautilus never discovers it on its own -- a bookmark is
+# what puts it in the sidebar. The file is owned and rewritten by Nautilus
+# whenever bookmarks are dragged around, so it is NOT stowed; entries are
+# reapplied from here instead. Same gap step_bar_settings closes for shell.json.
+#
+# Format: <uri> <label>. The label may contain spaces; the URI may not.
+NAUTILUS_BOOKMARKS_FILE="$HOME/.config/gtk-3.0/bookmarks"
+NAUTILUS_BOOKMARKS=(
+  "file:///mnt/spartacus/6TB_Storage Spartacus 6TB"
+  "file:///mnt/spartacus/6TB_Storage/Data Spartacus Data"
+)
+
+# Gated on the module rather than on the paths existing: these live under an
+# autofs mount point, so a `[[ -d ]]` test would TRIGGER the automount and stall
+# for the mount timeout whenever the server is unreachable.
+step_nautilus_bookmarks() {
+  enabled smb_shares || return 0
+  section "Nautilus bookmarks"
+  [[ -d "${NAUTILUS_BOOKMARKS_FILE%/*}" ]] || { skip "no GTK config dir"; return 0; }
+
+  local entry added=0
+  for entry in "${NAUTILUS_BOOKMARKS[@]}"; do
+    if [[ -f $NAUTILUS_BOOKMARKS_FILE ]] && grep -qxF "$entry" "$NAUTILUS_BOOKMARKS_FILE"; then
+      ok "${entry#* } bookmarked"
+    elif acting "bookmark ${entry#* }"; then
+      printf '%s\n' "$entry" >> "$NAUTILUS_BOOKMARKS_FILE"
+      changed "bookmarked ${entry#* }"
+      added=1
+    fi
+  done
+  (( added )) && note "Nautilus picks up new bookmarks immediately; if not, restart it with 'nautilus -q'."
+  return 0
+}
+
+step_smb_shares() {
+  enabled smb_shares || return 0
+  section "SMB shares"
+  have mount.cifs || { skip "cifs-utils not installed"; return 0; }
+
+  if [[ ! -e $SMB_CREDENTIALS ]]; then
+    note "SMB credentials are missing. Create $SMB_CREDENTIALS as root, mode 600:
+       username=<windows account>
+       password=<its password>
+     It is intentionally not in this repo -- the repo is public."
+    skip "no credentials at $SMB_CREDENTIALS"
+    return 0
+  fi
+  ok "credentials present"
+
+  local entry unit mountpoint
+  for entry in "${SMB_AUTOMOUNTS[@]}"; do
+    IFS='|' read -r unit mountpoint <<<"$entry"
+
+    # mount.cifs needs the mount point to exist; it is under /mnt, so root owns it.
+    if [[ -d $mountpoint ]]; then
+      ok "${mountpoint} exists"
+    elif acting "create $mountpoint"; then
+      sudo mkdir -p "$mountpoint" && changed "created $mountpoint" \
+        || fail "could not create $mountpoint"
+    fi
+
+    if ! systemctl cat "$unit" >/dev/null 2>&1; then
+      skip "$unit not installed (run --restore-host, or check hosts/$(hostname)/)"
+      continue
+    fi
+    # Enable the .automount, never the .mount: the share is only reachable when
+    # tailscaled is up and the server is online, and a boot-time CIFS mount
+    # that cannot reach its server stalls boot and hangs `df`.
+    if [[ "$(systemctl is-enabled "$unit" 2>/dev/null)" == "enabled" ]]; then
+      ok "$unit enabled"
+    elif acting "enable $unit"; then
+      sudo systemctl daemon-reload
+      sudo systemctl enable --now "$unit" && changed "$unit enabled" \
+        || fail "could not enable $unit"
+    fi
+  done
+}
+
+step_tailscale() {
+  enabled tailscale || return 0
+  section "Tailscale"
+  have tailscale || { skip "tailscale not installed"; return 0; }
+
+  # tailscaled itself is enabled by step_services, which runs earlier.
+  if [[ "$(systemctl is-active tailscaled.service 2>/dev/null)" != "active" ]]; then
+    skip "tailscaled not running yet"
+    return 0
+  fi
+
+  # `--operator` is what lets tailscale commands -- and the bar widget, which
+  # shells out to them -- work without sudo. Read the current value back rather
+  # than setting it every run, so a configured machine reports no changes.
+  # Spacing in the JSON has changed between versions, hence the regex.
+  local prefs
+  prefs="$(tailscale debug prefs 2>/dev/null || true)"
+  if [[ $prefs =~ \"OperatorUser\"[[:space:]]*:[[:space:]]*\"$USER\" ]]; then
+    ok "operator is $USER"
+  elif [[ -z $prefs ]]; then
+    skip "could not read tailscale prefs; leaving operator alone"
+  elif acting "set tailscale operator to $USER"; then
+    sudo tailscale set --operator="$USER" && changed "operator set to $USER" \
+      || fail "could not set operator"
+  fi
+
+  # Taildrop: incoming files land in ~/Downloads. Omarchy ships the unit.
+  if ! systemctl --user cat "$TAILSCALE_RECEIVE_UNIT" >/dev/null 2>&1; then
+    skip "$TAILSCALE_RECEIVE_UNIT not installed"
+  elif [[ "$(systemctl --user is-enabled "$TAILSCALE_RECEIVE_UNIT" 2>/dev/null)" == "enabled" ]]; then
+    ok "Taildrop receiver enabled"
+  elif acting "enable $TAILSCALE_RECEIVE_UNIT"; then
+    systemctl --user enable --now "$TAILSCALE_RECEIVE_UNIT" && changed "Taildrop receiver enabled" \
+      || fail "could not enable $TAILSCALE_RECEIVE_UNIT"
+  fi
+
+  # The bar widget is first-party and ships disabled, so this is a plain
+  # enable -- no `plugin add`, no third-party code, none of the --yes
+  # confirmation the other plugin steps need.
+  if ! have omarchy; then
+    skip "omarchy not available; bar widget not enabled"
+  else
+    local listing
+    listing="$(omarchy plugin list 2>/dev/null || true)"
+    if [[ $listing =~ $TAILSCALE_PLUGIN_ID[[:space:]]+enabled ]]; then
+      ok "bar widget enabled"
+    elif acting "enable the $TAILSCALE_PLUGIN_ID bar widget"; then
+      omarchy plugin enable "$TAILSCALE_PLUGIN_ID" && changed "bar widget enabled" \
+        || fail "could not enable $TAILSCALE_PLUGIN_ID"
+    fi
+  fi
+
+  # Account auth is a browser flow and cannot be scripted, so it is reported,
+  # not performed -- the same shape as the YubiKey steps. Re-running
+  # `tailscale up` unconditionally would also fight any flags set by hand.
+  local status
+  status="$(tailscale status 2>&1 || true)"
+  if [[ $status == *"Logged out"* || $status == *"NeedsLogin"* || $status == *"logged out"* ]]; then
+    note "Tailscale is installed but not logged in. Run:
+       sudo tailscale up --accept-routes
+     then re-run this script to finish the operator and widget setup."
+    skip "not logged in yet"
+  else
+    ok "logged in to the tailnet"
+  fi
 }
 
 step_yubikey_ssh() {
@@ -1817,6 +2002,9 @@ main() {
   step_hyprmoncfg
   step_omasettings
   step_omastats
+  step_tailscale
+  step_smb_shares
+  step_nautilus_bookmarks
   step_yubikey_ssh
   step_ssh_agent
   step_work_repos

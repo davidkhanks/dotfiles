@@ -87,6 +87,25 @@ list. `starship.fish` sorts after `pure.fish`, which is what keeps CachyOS's
 `fish-pure-prompt` from taking the prompt back. Any name sorting before `p`
 loses the prompt silently.
 
+**Never enable a CIFS `.mount` unit directly — enable its `.automount`.** A
+boot-time CIFS mount that cannot reach its server stalls the boot and hangs
+`df`, and on a laptop the tailnet is frequently unreachable. The same goes for
+an fstab line without `x-systemd.automount`. See `docs/smb-shares.md`.
+
+**The SMB credentials file is deliberately not in this repo.** `mount.cifs`
+needs the password in plaintext at mount time, so age-encrypting it would only
+move the problem and would put a YubiKey touch in the path of a filesystem
+mount. It is machine-local at `/etc/samba/credentials/<host>`, root-owned, mode
+600, and `step_smb_shares` reports its absence rather than creating one.
+
+**Tailscale is first-party in Omarchy.** There is an `omarchy.tailscale` bar
+widget, a Taildrop receive unit and an `omarchy-install-service-tailscale`
+script. Do not reach for a third-party Tailscale plugin — the built-in one is
+better and carries none of the unsandboxed-QML risk. `step_tailscale` mirrors
+Omarchy's installer but deliberately never runs `tailscale up`: that is a
+browser auth flow, and running it every bootstrap would also stomp flags set
+by hand.
+
 ## Elevation
 
 There is **no passwordless sudo**. Interactive `sudo` hangs in a non-TTY
@@ -279,6 +298,12 @@ Full detail in `docs/thermals.md` and `docs/yubikey-ssh.md`. The short version:
   `journalctl -b | grep -iE 'PM: suspend (entry|exit)|Lid (opened|closed)'`.
   Two `suspend entry` lines means closing the lid woke it and the rule needs
   narrowing; one means it behaved.
+- **VPN.ac alongside Tailscale is undecided.** Tailscale is set up and works.
+  Whether a commercial full-tunnel VPN can run beside it — kill switches are
+  the decider, exit nodes are mutually exclusive — plus the fact that a
+  WireGuard `.conf` carries a **private key that cannot go in this public
+  repo**, are written up in `docs/vpn.md`. Settle the kill-switch question
+  before writing a `vpn` module.
 - **macOS support is designed but not built.** An existing MacBook stays in
   occasional use and wants the same tool set. The plan, the measurement it
   rests on (36 of 65 tracked files are already OS-agnostic; exactly one file,
