@@ -7,7 +7,7 @@ Machine-specific files for this desktop. **Nothing here is portable.**
 | Board | ASRock Z390 Phantom Gaming-ITX/ac (mini-ITX) |
 | CPU | Intel i9-9900K |
 | GPU | NVIDIA RTX 3070 |
-| Storage | SATA SSD 466G (Omarchy) · Intel 660p 1TB (Windows) · WD Blue SN550 1TB (second Linux) |
+| Storage | SATA SSD 466G (Omarchy) · Intel 660p 1TB (Windows) · WD Blue SN550 1TB (CachyOS) |
 
 ## What lives here and why
 
@@ -50,7 +50,7 @@ and commit, or the change exists only on this machine's disk.
 |---|---|---|
 | SATA SSD, 465.8G | **Omarchy** | 2G ESP at `/boot`, LUKS + btrfs root |
 | Intel SSDPEKNW010T8 (660p), 953.9G | **Windows** | 100M ESP, 16M MSR, NTFS, 509M recovery |
-| WDC WDS100T2B0C (Blue SN550), 931.5G | **second Linux** | 600M ESP, 1G ext4, btrfs |
+| WDC WDS100T2B0C (Blue SN550), 931.5G | **CachyOS** | 4G ESP, LUKS root |
 
 **`nvmeXn1` numbers are not stable across boots.** They follow PCIe probe order,
 so a drive that enumerates slowly — or not at all — renumbers the others. That
@@ -103,20 +103,59 @@ irreplaceable should live on it unbacked.
 
 ## Not tracked here
 
-**Limine boot entries** (`/boot/limine.conf`) chainload Windows and the second
-Linux install. Deliberately excluded — the entries embed partition GUIDs unique
-to these disks, and `limine-scan` is interactive. Getting it wrong costs a
-bootloader. Recreate manually:
+**Limine boot entries** (`/boot/limine.conf`) chainload Windows and CachyOS.
+Deliberately excluded — the entries embed partition GUIDs unique to these disks,
+and `limine-scan` is interactive. Getting it wrong costs a bootloader. Recreate
+manually:
 
 ```bash
-limine-scan          # pick Windows Boot Manager, then the other Linux
+limine-scan          # pick Windows Boot Manager, then CachyOS
 ```
 
 then set `timeout: no` in `/boot/limine.conf` for a menu that waits for input.
 The Omarchy entry is renamed `Quattro`; `comment: kernel-id=linux` is what makes
 that survive kernel updates, so leave it in place.
 
-### Replacing the second Linux install
+### The second install: CachyOS
+
+Installed 2026-09-22, replacing Bazzite. CachyOS runs its own Limine, so this is
+Limine chainloading Limine — which works fine and keeps one config syntax across
+both installs. Its entry in `/boot/limine.conf`:
+
+```
+/CachyOS
+comment: CachyOS
+comment: order-priority=20
+protocol: efi
+path: uuid(4c426829-ef15-4bc5-8205-983acb45f4aa):/EFI/limine/limine_x64.efi
+```
+
+That PARTUUID is `nvme1n1p1` as partitioned on 2026-09-22; repartitioning the
+drive changes it. Look it up with `lsblk -o NAME,SIZE,PARTUUID` rather than
+trusting this value after any disk work.
+
+**The path is lowercase** — `/EFI/limine/limine_x64.efi`. `efibootmgr` prints
+UEFI's uppercase form, which is *not* what sits on the FAT filesystem. Mount the
+ESP and look rather than copying what `efibootmgr` displays.
+
+Firmware boot order, after correcting what the installer did:
+
+```
+0002,000C,0010,0001,0000
+  |    |    |    |    `--- Windows
+  |    |    |    `-------- CachyOS Limine
+  |    |    `------------- CachyOS fallback  \EFI\BOOT\BOOTX64.EFI
+  |    `------------------ Omarchy fallback  \EFI\BOOT\BOOTX64.EFI
+  `----------------------- Omarchy Limine    <- the top-level menu
+```
+
+Omarchy's own fallback sits second on purpose: if `LIMINE_X64.EFI` ever fails to
+load, the firmware tries the other binary on the *same* ESP before reaching for
+another drive, so a damaged file still lands you in your own menu. The CachyOS
+entries are kept rather than deleted — they are a direct route in if Omarchy's
+ESP is ever damaged.
+
+### Replacing it again
 
 Entries key on the **PARTUUID** of that install's ESP, not its filesystem UUID:
 `path: uuid(<PARTUUID>):/EFI/<vendor>/<loader>.efi`. Reusing the existing ESP
