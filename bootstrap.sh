@@ -76,6 +76,14 @@ PACKAGES_TAILSCALE=(tailscale)
 #   cifs-utils -- mount.cifs, for SMB shares on other tailnet machines
 #   keyutils   -- kernel keyring, used by cifs for credential caching
 PACKAGES_SMB=(cifs-utils keyutils)
+#   remmina   -- GUI remote desktop client (the Linux answer to the Windows App)
+#   freerdp   -- an OPTIONAL dep of remmina, and the RDP plugin. Installing
+#                remmina alone gives a remote desktop client that cannot speak
+#                RDP at all, which is a confusing way to find out.
+#   libsecret -- also optional; the Secret plugin. Without it remmina stores
+#                connection passwords obfuscated in the .remmina profile file
+#                rather than in the keyring.
+PACKAGES_RDP=(remmina freerdp libsecret)
 
 # AUR packages, installed with yay (Omarchy ships it). Left interactive on
 # purpose -- yay shows PKGBUILDs for review and needs your sudo password, and
@@ -225,7 +233,7 @@ HOST_FILES=(
 # different things (no fan control on a laptop, for instance), and neither
 # should have to re-answer the prompts on every run.
 BOOTSTRAP_CONF="${BOOTSTRAP_CONF:-$DOTFILES_DIR/bootstrap.conf}"
-MODULE_KEYS=(yubikey coolercontrol slack brave webapps airpods hyprmoncfg omasettings omastats blesh gaming tailscale smb_shares herdr_nav work_repos work_setup nvim_default nvim_sync)
+MODULE_KEYS=(yubikey coolercontrol slack brave webapps airpods hyprmoncfg omasettings omastats blesh gaming tailscale smb_shares rdp herdr_nav work_repos work_setup nvim_default nvim_sync)
 declare -A MODULE_ENABLED=()
 
 module_desc() {
@@ -243,6 +251,7 @@ module_desc() {
     gaming)        echo "Steam, gamescope and the MangoHud overlay" ;;
     tailscale)     echo "Tailscale mesh VPN (daemon, Taildrop, bar widget, admin web app)" ;;
     smb_shares)    echo "Automount SMB shares from other tailnet machines (needs a credentials file)" ;;
+    rdp)           echo "Remmina remote desktop client, with the RDP and keyring plugins" ;;
     herdr_nav)     echo "C-h/j/k/l navigation between herdr panes and Neovim" ;;
     work_repos)    echo "Clone work repositories (age-encrypted manifest)" ;;
     work_setup)    echo "Prepare the work dev environment (tools, worktrees, containers)" ;;
@@ -449,6 +458,7 @@ step_packages() {
   enabled gaming     && want+=("${PACKAGES_GAMING[@]}")
   enabled tailscale  && want+=("${PACKAGES_TAILSCALE[@]}")
   enabled smb_shares && want+=("${PACKAGES_SMB[@]}")
+  enabled rdp        && want+=("${PACKAGES_RDP[@]}")
   enabled work_setup && want+=("${PACKAGES_WORK[@]}")
   # Prefer the repo package where the distro has one (CachyOS); otherwise this
   # stays empty and step_aur_packages picks it up instead. Spelled as an `if`
@@ -791,6 +801,43 @@ NAUTILUS_BOOKMARKS=(
 # Gated on the module rather than on the paths existing: these live under an
 # autofs mount point, so a `[[ -d ]]` test would TRIGGER the automount and stall
 # for the mount timeout whenever the server is unreachable.
+# Remmina keeps connection profiles as plain .remmina files here. They are NOT
+# stowed: the useful ones carry a server and a username, and this repo is
+# public. Passwords go to the keyring via the Secret plugin, not into the file.
+REMMINA_PROFILE_DIR="$HOME/.local/share/remmina"
+
+step_rdp() {
+  enabled rdp || return 0
+  section "Remote desktop"
+  have remmina || { skip "remmina not installed"; return 0; }
+
+  # The plugin is the thing worth checking. remmina installs and launches
+  # perfectly well without it and simply offers no RDP protocol option.
+  if [[ -e /usr/lib/remmina/plugins/remmina-plugin-rdp.so ]]; then
+    ok "RDP plugin present"
+  else
+    fail "remmina has no RDP plugin -- install freerdp"
+  fi
+  if [[ -e /usr/lib/remmina/plugins/remmina-plugin-secret.so ]]; then
+    ok "keyring plugin present"
+  else
+    note "remmina has no Secret plugin (install libsecret); connection passwords
+     would be stored obfuscated in ~/.local/share/remmina/*.remmina rather
+     than in the keyring."
+  fi
+
+  local n=0
+  [[ -d $REMMINA_PROFILE_DIR ]] && n=$(find "$REMMINA_PROFILE_DIR" -maxdepth 1 -name '*.remmina' 2>/dev/null | wc -l)
+  if (( n > 0 )); then
+    ok "$n connection profile(s) saved"
+  else
+    note "No Remmina profiles yet. Add one in the GUI: New, protocol RDP,
+     server = the tailnet name of the machine. Profiles are deliberately not
+     tracked in this repo -- they carry a server and a username."
+    skip "no profiles yet"
+  fi
+}
+
 step_nautilus_bookmarks() {
   enabled smb_shares || return 0
   section "Nautilus bookmarks"
@@ -2005,6 +2052,7 @@ main() {
   step_tailscale
   step_smb_shares
   step_nautilus_bookmarks
+  step_rdp
   step_yubikey_ssh
   step_ssh_agent
   step_work_repos

@@ -43,6 +43,7 @@ own without re-answering every run.
 | `blesh` | `ble.sh` — fish-style autosuggestions and highlighting for bash |
 | `gaming` | Steam, `gamescope`, MangoHud (off by default — large download) |
 | `tailscale` | `tailscale`, `tailscaled`, Taildrop receiver, Omarchy's **first-party** bar widget, admin-console web app |
+| `rdp` | `remmina` plus `freerdp` and `libsecret` — both **optional** deps that Remmina is useless or insecure without |
 | `smb_shares` | `cifs-utils`, mount points and systemd **automount** units for SMB shares on tailnet machines (off by default — needs a machine-local credentials file) |
 | `herdr_nav` | `C-h/j/k/l` navigation between herdr panes and Neovim |
 | `work_repos` | `age` tooling, decrypting the manifest, cloning the repos |
@@ -324,6 +325,7 @@ left/right/middle and emits `pressed(int button)`. A new plugin needs
 - [`docs/multi-os.md`](docs/multi-os.md) — planned macOS support, and why not chezmoi
 - [`docs/vpn.md`](docs/vpn.md) — Tailscale setup, and the open VPN.ac coexistence question
 - [`docs/smb-shares.md`](docs/smb-shares.md) — mounting Windows shares over the tailnet, and decoding `NT_STATUS_*` failures
+- [`docs/remote-desktop.md`](docs/remote-desktop.md) — Remmina/RDP, and the optional-dependency trap
 - [`hosts/omarchy/README.md`](hosts/omarchy/README.md) — this desktop's specifics
 
 ## This repo is public
