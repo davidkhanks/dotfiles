@@ -98,6 +98,32 @@ yk-reload() {
 #   aegis status          what is loaded and when it expires
 command -v aegis >/dev/null 2>&1 && eval "$(aegis shell-init bash)"
 
+# --- llama.cpp ---------------------------------------------------------------
+# Keep downloaded GGUF models in ~/models rather than ~/.cache, where a cache
+# cleaner would happily delete 20+ GB. Read by llama.cpp's own -hf downloader.
+export LLAMA_CACHE="$HOME/models"
+
+# --- pk ----------------------------------------------------------------------
+# Pick processes with fzf and kill them. `pk` sends TERM, `pk KILL` sends -9.
+# Tab multi-selects; the preview pane shows the full command line of whatever is
+# highlighted, which is how you catch yourself aiming at the wrong PID.
+#
+# This is the inverse of pkill: pkill takes a pattern up front and kills
+# immediately, so there is no point at which fzf could choose for you.
+pk() {
+  local sig="${1:-TERM}" pids
+  pids=$(
+    ps -eo pid,user,%cpu,%mem,etime,comm,args --sort=-%cpu \
+      | fzf --header-lines=1 --multi --reverse --height=60% \
+            --prompt="kill -$sig > " \
+            --preview='ps -p $(echo {} | awk "{print \$1}") -o pid,ppid,user,etime,rss,args --no-headers 2>/dev/null' \
+            --preview-window=down:4:wrap \
+      | awk '{print $1}'
+  )
+  [ -z "$pids" ] && { echo "pk: nothing selected"; return 1; }
+  echo "$pids" | xargs -r kill -"$sig" && echo "pk: sent SIG$sig to $(echo $pids | tr '\n' ' ')"
+}
+
 # --- ble.sh, part two -------------------------------------------------------
 # Must be the LAST line: attaching hands ble.sh the line editor, and anything
 # registering a prompt hook afterwards would be invisible to it.
