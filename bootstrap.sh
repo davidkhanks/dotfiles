@@ -805,6 +805,13 @@ NAUTILUS_BOOKMARKS=(
 # stowed: the useful ones carry a server and a username, and this repo is
 # public. Passwords go to the keyring via the Secret plugin, not into the file.
 REMMINA_PROFILE_DIR="$HOME/.local/share/remmina"
+# Profiles are carried between machines as an age-encrypted tar, using the same
+# YubiKey identity as the work manifest. What is inside is a server, a username
+# and display settings -- NOT a password: remmina's Secret plugin keeps that in
+# the local keyring and writes only the placeholder `password=.` to the file.
+# So a rolled-out profile is complete except for the password, which is entered
+# once per machine. That is the right split; see docs/remote-desktop.md.
+REMMINA_PROFILES_AGE="${REMMINA_PROFILES_AGE:-$DOTFILES_DIR/secrets/remmina-profiles.age}"
 
 step_rdp() {
   enabled rdp || return 0
@@ -829,13 +836,41 @@ step_rdp() {
   local n=0
   [[ -d $REMMINA_PROFILE_DIR ]] && n=$(find "$REMMINA_PROFILE_DIR" -maxdepth 1 -name '*.remmina' 2>/dev/null | wc -l)
   if (( n > 0 )); then
-    ok "$n connection profile(s) saved"
-  else
-    note "No Remmina profiles yet. Add one in the GUI: New, protocol RDP,
-     server = the tailnet name of the machine. Profiles are deliberately not
-     tracked in this repo -- they carry a server and a username."
-    skip "no profiles yet"
+    ok "$n connection profile(s) present"
+    return 0
   fi
+
+  # Only restore when there are none. Decrypting on every run would demand a
+  # YubiKey touch every time, and would also clobber profiles edited in the GUI
+  # since the payload was last refreshed. To pull down updated profiles, remove
+  # the local ones first, or decrypt by hand (see docs/remote-desktop.md).
+  if [[ ! -r $REMMINA_PROFILES_AGE ]]; then
+    skip "no profiles, and no ${REMMINA_PROFILES_AGE##*/} to restore from"
+    return 0
+  fi
+  have age || { skip "age not installed; cannot restore profiles"; return 0; }
+  if [[ ! -r $WORK_REPOS_AGE_IDENTITY ]]; then
+    skip "no age identity at ${WORK_REPOS_AGE_IDENTITY##*/}"
+    return 0
+  fi
+  acting "restore Remmina profiles from ${REMMINA_PROFILES_AGE##*/}" || return 0
+
+  printf '  %s·%s decrypting %s -- TOUCH YOUR YUBIKEY\n' "$C_DIM" "$C_OFF" "${REMMINA_PROFILES_AGE##*/}"
+  local tmp
+  tmp="$(mktemp)"; chmod 600 "$tmp"
+  if age -d -i "$WORK_REPOS_AGE_IDENTITY" -o "$tmp" "$REMMINA_PROFILES_AGE"; then
+    mkdir -p "$REMMINA_PROFILE_DIR"
+    if tar -C "$REMMINA_PROFILE_DIR" -xf "$tmp"; then
+      changed "restored $(find "$REMMINA_PROFILE_DIR" -maxdepth 1 -name '*.remmina' | wc -l) profile(s)"
+      note "Remmina profiles carry no password -- the Secret plugin keeps those in
+     each machine's own keyring. Enter it once on first connect."
+    else
+      fail "could not unpack ${REMMINA_PROFILES_AGE##*/}"
+    fi
+  else
+    fail "could not decrypt ${REMMINA_PROFILES_AGE##*/} (YubiKey plugged in? touched in time?)"
+  fi
+  rm -f "$tmp"
 }
 
 step_nautilus_bookmarks() {
