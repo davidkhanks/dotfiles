@@ -30,8 +30,11 @@ Two consequences that are easy to get wrong:
   CoolerControl configs describe identical hardware, so
   [`thermals.md`](thermals.md) applies to both. They are separate directories
   only because `host-config` keys on hostname.
-- **`omarchy` and `cachyos` can never both be on the tailnet.** Booting one
-  takes the other offline. Tailnet nodes are not physical machines here.
+- **`omarchy` and `cachyos` can never both be online.** They are two distinct
+  tailnet nodes with two distinct hostnames -- `host-config` resolves
+  `hosts/<hostname>/` from `hostnamectl hostname`, so the directories could not
+  exist otherwise -- but booting one takes the other offline. Tailnet nodes are
+  not physical machines here, and an offline node is not a missing one.
 
 The `fish` stow package exists for the CachyOS drive — CachyOS uses fish as its
 login shell. `step_stow` skips that package wherever fish is not installed, so
@@ -46,7 +49,7 @@ it costs the Omarchy machines nothing.
 | spartacus | yes | SMB 445 and RDP 3389 reachable; no SSH server |
 | MacBook Pro | yes | no SSH server enabled |
 | iPhone | yes | |
-| cachyos (desktop) | **not yet** | would replace `omarchy` on the tailnet when booted |
+| cachyos (desktop) | **not yet** | a separate node from `omarchy`, never online at the same time |
 | Windows 10 (desktop) | no | not worth setting up |
 
 ## What bootstrap.sh targets
