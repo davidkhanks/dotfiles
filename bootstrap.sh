@@ -1080,6 +1080,14 @@ step_yubikey_ssh() {
   fi
 }
 
+# Where our own bar widgets go. The default is the right section; entries here
+# override it. Format: <section>[|<omarchy bar move args>]. The second field
+# exists because `omarchy plugin enable` can only pick a section, not a
+# position inside it -- ordering needs `omarchy bar move --before/--after`.
+declare -A OWN_PLUGIN_PLACEMENT=(
+  [davidkhanks.lock]="center|--section center --before omarchy.indicators"
+)
+
 step_own_plugins() {
   section "Own shell plugins"
 
@@ -1101,9 +1109,23 @@ step_own_plugins() {
     found=1
     id="$(basename "$dir")"
     if omarchy plugin list 2>/dev/null | grep -qE "^${id}[[:space:]]+enabled"; then
+      # Placement is applied only on first enable. Re-applying it every run
+      # would undo any reordering done by dragging widgets on the bar, which
+      # Omarchy supports and which shell.json -- not this repo -- owns.
       ok "$id enabled"
     elif acting "enable $id"; then
-      omarchy plugin enable "$id" right && changed "enabled $id" || fail "could not enable $id"
+      local spec section move
+      spec="${OWN_PLUGIN_PLACEMENT[$id]:-right}"
+      section="${spec%%|*}"
+      move=""
+      [[ $spec == *"|"* ]] && move="${spec#*|}"
+      if omarchy plugin enable "$id" "$section"; then
+        # Unquoted on purpose: $move is a small set of flags, not a path.
+        [[ -n $move ]] && omarchy bar move "$id" $move >/dev/null 2>&1
+        changed "enabled $id ($section)"
+      else
+        fail "could not enable $id"
+      fi
     fi
   done
   (( found )) || skip "none stowed"

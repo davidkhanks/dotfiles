@@ -285,14 +285,53 @@ machine still gets fully prepared in one pass.
 
 Plugins written here (as opposed to the third-party ones the modules install)
 live in the `omarchy` stow package under
-`.config/omarchy/plugins/<user>.<name>/`. Currently that is a screenshot
-button: left-click captures a region, right-click captures fullscreen.
+`.config/omarchy/plugins/<user>.<name>/`. Currently:
+
+- **`davidkhanks.screenshot`** — left-click captures a region, right-click
+  fullscreen. Sits in the right section.
+- **`davidkhanks.lock`** — left-click locks the session (`omarchy-system-lock`),
+  right-click opens the system menu. Sits in the **centre** section immediately
+  left of `omarchy.indicators`, and hides and reveals with the indicators
+  rather than being permanently visible (see below).
 
 Stow ships the files, but whether a plugin is *enabled* and where it sits in
 the bar lives in `shell.json`, which is not tracked — Omarchy rewrites it
 whenever you use `omarchy bar` or the settings UI. `bootstrap.sh` closes that
 gap by enabling anything matching the `<user>.` id prefix, so a new plugin is
 picked up just by being stowed.
+
+Section and order come from `OWN_PLUGIN_PLACEMENT`, because `omarchy plugin
+enable` can only choose a section — putting a widget at a *position* inside one
+needs `omarchy bar move --before`/`--after`:
+
+```bash
+[davidkhanks.lock]="center|--section center --before omarchy.indicators"
+```
+
+Placement is applied **only on first enable**. Re-applying it every run would
+undo any reordering done by dragging widgets on the bar, which Omarchy supports
+and which `shell.json` owns.
+
+### Hiding with the indicators
+
+The centre indicators (`StayAwake`'s coffee mug and friends) fade out when
+idle and back in when that part of the bar is hovered. `davidkhanks.lock`
+matches that, but it is **not** a `BarIndicator`: that component takes its
+reveal state from `indicatorHost.revealInactiveIndicators`, and only the
+`omarchy.indicators` widget can be that host, so a standalone plugin would
+never reveal.
+
+Extending `omarchy.indicators` was the alternative. Its entry list *is*
+configurable, but ids resolve to `../indicators/<id>.qml` under
+`/usr/share/omarchy`, so a user entry would have to put QML inside an
+Omarchy-owned directory; cloning the whole widget works but forks it away from
+upstream updates.
+
+So the widget reads the same bar-level flag the real indicators read —
+`bar.centerSectionRevealHeld`, published on the bar API by `Bar.qml` — and
+mirrors their opacity (0 idle, 0.45 revealed). Width is held constant rather
+than collapsed, matching the indicators, so revealing does not shove the clock
+sideways.
 
 Widget *properties* have the same problem, and `BAR_SETTINGS` in
 `bootstrap.sh` closes it the same way — a list of `<widget-id>|<key>|<json>`

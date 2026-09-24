@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "davidkhanks.lock",
+  "name": "Lock",
+  "version": "1.0.0",
+  "author": "davidkhanks",
+  "description": "Lock the session from the bar",
+  "kinds": ["bar-widget"],
+  "entryPoints": { "barWidget": "Lock.qml" },
+  "barWidget": {
+    "displayName": "Lock",
+    "description": "Click to lock the session; right-click for the system menu.",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "center"
+  }
+}
