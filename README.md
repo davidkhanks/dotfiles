@@ -384,6 +384,7 @@ left/right/middle and emits `pressed(int button)`. A new plugin needs
 - [`docs/smb-shares.md`](docs/smb-shares.md) — mounting Windows shares over the tailnet, and decoding `NT_STATUS_*` failures
 - [`docs/remote-desktop.md`](docs/remote-desktop.md) — Remmina/RDP, and the optional-dependency trap
 - [`docs/remote-access.md`](docs/remote-access.md) — SSH between my machines, and what a remote bootstrap run can and cannot do
+- [`docs/machines.md`](docs/machines.md) — the fleet, and why two `hosts/` dirs are one computer
 - [`hosts/omarchy/README.md`](hosts/omarchy/README.md) — this desktop's specifics
 
 ## This repo is public

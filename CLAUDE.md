@@ -98,6 +98,12 @@ move the problem and would put a YubiKey touch in the path of a filesystem
 mount. It is machine-local at `/etc/samba/credentials/<host>`, root-owned, mode
 600, and `step_smb_shares` reports its absence rather than creating one.
 
+**`hosts/omarchy/` and `hosts/cachyos/` are the same physical desktop** — two
+drives, two OSes, one box, and only one can run at a time. They are separate
+directories only because `host-config` keys on hostname. So they can never both
+be on the tailnet, and their CoolerControl configs describe identical hardware.
+`docs/machines.md` has the full fleet.
+
 **Tailscale is first-party in Omarchy.** There is an `omarchy.tailscale` bar
 widget, a Taildrop receive unit and an `omarchy-install-service-tailscale`
 script. Do not reach for a third-party Tailscale plugin — the built-in one is
