@@ -85,6 +85,21 @@ PACKAGES_SMB=(cifs-utils keyutils)
 #                rather than in the keyring.
 PACKAGES_RDP=(remmina freerdp libsecret)
 
+# Public keys authorized to SSH IN to this machine. Public halves only -- these
+# are safe in a public repo by construction, which is the whole point of the
+# asymmetry. Every login needs a physical touch on the YubiKey, because the
+# private half never leaves the token.
+#
+# This is what lets any machine reach any other: plug the key into whichever
+# machine you are sitting at, and every machine in the fleet accepts it.
+SSH_AUTHORIZED_KEYS=(
+  "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBEJtav4wle78BsUth+6R3Pvl4eQhZQjpqRqS0cAnUvAkVk7+vkNe+1lsmIJfpBl8PnB8tp+zAEoejLi1ebd00iY= davidkhanks-yubikey-piv-9a"
+)
+# sshd hardening written by step_ssh_server. Not in hosts/<hostname>/ because it
+# is identical on every machine; same precedent as the udev rule written by
+# step_yubikey_ssh.
+SSHD_DROPIN="/etc/ssh/sshd_config.d/10-hardening.conf"
+
 # AUR packages, installed with yay (Omarchy ships it). Left interactive on
 # purpose -- yay shows PKGBUILDs for review and needs your sudo password, and
 # it must never be run as root.
@@ -233,7 +248,7 @@ HOST_FILES=(
 # different things (no fan control on a laptop, for instance), and neither
 # should have to re-answer the prompts on every run.
 BOOTSTRAP_CONF="${BOOTSTRAP_CONF:-$DOTFILES_DIR/bootstrap.conf}"
-MODULE_KEYS=(yubikey coolercontrol slack brave webapps airpods hyprmoncfg omasettings omastats blesh gaming tailscale smb_shares rdp herdr_nav work_repos work_setup nvim_default nvim_sync)
+MODULE_KEYS=(yubikey coolercontrol slack brave webapps airpods hyprmoncfg omasettings omastats blesh gaming tailscale smb_shares rdp ssh_server herdr_nav work_repos work_setup nvim_default nvim_sync)
 declare -A MODULE_ENABLED=()
 
 module_desc() {
@@ -252,6 +267,7 @@ module_desc() {
     tailscale)     echo "Tailscale mesh VPN (daemon, Taildrop, bar widget, admin web app)" ;;
     smb_shares)    echo "Automount SMB shares from other tailnet machines (needs a credentials file)" ;;
     rdp)           echo "Remmina remote desktop client, with the RDP and keyring plugins" ;;
+    ssh_server)    echo "Accept SSH in over the tailnet only, YubiKey key auth (opens no port to the LAN)" ;;
     herdr_nav)     echo "C-h/j/k/l navigation between herdr panes and Neovim" ;;
     work_repos)    echo "Clone work repositories (age-encrypted manifest)" ;;
     work_setup)    echo "Prepare the work dev environment (tools, worktrees, containers)" ;;
@@ -264,7 +280,7 @@ module_desc() {
 # it defaults off.
 # smb_shares defaults off: it is useless without a machine-local credentials
 # file that this repo deliberately does not carry.
-module_default() { case "$1" in nvim_sync|gaming|smb_shares) echo no ;; *) echo yes ;; esac; }
+module_default() { case "$1" in nvim_sync|gaming|smb_shares|ssh_server) echo no ;; *) echo yes ;; esac; }
 
 enabled() { [[ "${MODULE_ENABLED[$1]:-no}" == yes ]]; }
 
@@ -738,6 +754,7 @@ step_services() {
   enabled yubikey       && units+=(pcscd.socket)
   enabled coolercontrol && units+=(coolercontrold.service)
   enabled tailscale     && units+=(tailscaled.service)
+  enabled ssh_server    && units+=(sshd.service)
   if (( ${#units[@]} == 0 )); then
     skip "no services selected"
     return 0
@@ -812,6 +829,64 @@ REMMINA_PROFILE_DIR="$HOME/.local/share/remmina"
 # So a rolled-out profile is complete except for the password, which is entered
 # once per machine. That is the right split; see docs/remote-desktop.md.
 REMMINA_PROFILES_AGE="${REMMINA_PROFILES_AGE:-$DOTFILES_DIR/secrets/remmina-profiles.age}"
+
+step_ssh_server() {
+  enabled ssh_server || return 0
+  section "SSH server"
+  have sshd || { skip "openssh not installed"; return 0; }
+
+  # 1. authorize the key. Appended rather than stowed: authorized_keys is a
+  #    file other tools legitimately add to, and sshd's StrictModes is fussy
+  #    about what it will read, so an additive plain file avoids both problems.
+  local ak="$SSH_DIR/authorized_keys" key present
+  for key in "${SSH_AUTHORIZED_KEYS[@]}"; do
+    present=""
+    [[ -f $ak ]] && present="$(grep -Fxc "$key" "$ak" 2>/dev/null || true)"
+    if [[ ${present:-0} != 0 ]]; then
+      ok "key authorized (${key##* })"
+    elif acting "authorize key ${key##* }"; then
+      mkdir -p "$SSH_DIR"; chmod 700 "$SSH_DIR"
+      printf '%s\n' "$key" >> "$ak"
+      chmod 600 "$ak"
+      changed "authorized ${key##* }"
+    fi
+  done
+
+  # 2. keys only. No passwords, no root, no keyboard-interactive.
+  local want="# Managed by bootstrap.sh -- see step_ssh_server.
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitRootLogin no
+PubkeyAuthentication yes"
+  # Plain cat, not sudo cat: the file is mode 644, and a sudo read here would
+  # make the idempotency check fail wherever sudo needs a TTY.
+  if [[ -r $SSHD_DROPIN ]] && [[ "$(cat "$SSHD_DROPIN" 2>/dev/null)" == "$want" ]]; then
+    ok "sshd hardening in place"
+  elif acting "write $SSHD_DROPIN"; then
+    printf '%s\n' "$want" | sudo tee "$SSHD_DROPIN" >/dev/null
+    sudo chmod 644 "$SSHD_DROPIN"
+    changed "wrote $SSHD_DROPIN"
+  fi
+
+  # 3. reachable over the tailnet ONLY. ufw defaults to deny-incoming here, so
+  #    without this rule sshd listens but nothing can reach it; with it, the
+  #    port is open on tailscale0 and on no other interface. An interface rule
+  #    rather than an address rule keeps tailnet IPs out of this public repo.
+  local rules
+  rules="$(sudo -n ufw status 2>/dev/null || true)"
+  if [[ $rules == *"22/tcp on tailscale0"* || $rules == *"22 on tailscale0"* ]]; then
+    ok "ufw allows ssh on tailscale0"
+  elif [[ -z $rules ]] && have ufw; then
+    # Reading ufw state needs root. Rather than propose a rule that may already
+    # exist, say so -- a real run has a TTY for sudo and resolves this properly.
+    skip "cannot read ufw state without sudo"
+  elif ! have ufw; then
+    note "ufw not installed; sshd is reachable on every interface. Restrict it."
+  elif acting "ufw allow ssh on tailscale0 only"; then
+    sudo ufw allow in on tailscale0 to any port 22 proto tcp >/dev/null \
+      && changed "ufw: ssh allowed on tailscale0" || fail "ufw rule failed"
+  fi
+}
 
 step_rdp() {
   enabled rdp || return 0
@@ -2110,6 +2185,7 @@ main() {
   step_smb_shares
   step_nautilus_bookmarks
   step_rdp
+  step_ssh_server
   step_yubikey_ssh
   step_ssh_agent
   step_work_repos

@@ -43,6 +43,7 @@ own without re-answering every run.
 | `blesh` | `ble.sh` — fish-style autosuggestions and highlighting for bash |
 | `gaming` | Steam, `gamescope`, MangoHud (off by default — large download) |
 | `tailscale` | `tailscale`, `tailscaled`, Taildrop receiver, Omarchy's **first-party** bar widget, admin-console web app |
+| `ssh_server` | accept SSH in **over the tailnet only**, YubiKey key auth, passwords and root login off (off by default) |
 | `rdp` | `remmina` plus `freerdp` and `libsecret` — both **optional** deps that Remmina is useless or insecure without |
 | `smb_shares` | `cifs-utils`, mount points and systemd **automount** units for SMB shares on tailnet machines (off by default — needs a machine-local credentials file) |
 | `herdr_nav` | `C-h/j/k/l` navigation between herdr panes and Neovim |
@@ -54,6 +55,23 @@ own without re-answering every run.
 Turning a module off removes its packages, services, kernel modules and host
 files from the run entirely — a laptop with `coolercontrol=no` never installs
 CoolerControl, never loads `nct6775`, and never touches `/etc`.
+
+### Worth exploring later: Tailscale SSH
+
+`ssh_server` runs a real `sshd` reached over the tailnet, authenticated by the
+YubiKey. The alternative is `tailscale up --ssh`, where Tailscale terminates
+SSH itself: no open port, no `authorized_keys`, no host keys to manage, and
+access governed by tailnet ACLs in the admin console. Meaningfully less
+machinery than what `ssh_server` sets up.
+
+It is **not** enabled, deliberately. Authentication becomes tailnet identity
+rather than a physical touch, so any already-logged-in device on the tailnet
+would get an unattended shell on everything. That is the wrong trade while the
+SMB account, the RDP account and the work credentials are all kept separate on
+purpose. Worth revisiting if the convenience starts to matter more than the
+touch — Tailscale ACLs can require periodic re-authentication, which would
+narrow the gap, and the two approaches can coexist. Full reasoning in
+[`docs/remote-access.md`](docs/remote-access.md).
 
 Each third-party plugin (`airpods`, `hyprmoncfg`, `omasettings`, `omastats`)
 is its own module because its QML runs **unsandboxed inside the long-lived
@@ -365,6 +383,7 @@ left/right/middle and emits `pressed(int button)`. A new plugin needs
 - [`docs/vpn.md`](docs/vpn.md) — Tailscale setup, and the open VPN.ac coexistence question
 - [`docs/smb-shares.md`](docs/smb-shares.md) — mounting Windows shares over the tailnet, and decoding `NT_STATUS_*` failures
 - [`docs/remote-desktop.md`](docs/remote-desktop.md) — Remmina/RDP, and the optional-dependency trap
+- [`docs/remote-access.md`](docs/remote-access.md) — SSH between my machines, and what a remote bootstrap run can and cannot do
 - [`hosts/omarchy/README.md`](hosts/omarchy/README.md) — this desktop's specifics
 
 ## This repo is public
