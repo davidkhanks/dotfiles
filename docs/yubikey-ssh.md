@@ -126,12 +126,26 @@ Omarchy will expire (5s floor).
 The server also advertises no `sound` capability, so the `sound-name` hint is
 ignored and the daemon plays the sound itself through `canberra-gtk-play`.
 
-**Caveat:** the daemon sees USB traffic stop, not the operation's exit status.
-An operation that times out or is cancelled without a touch also stops the
-traffic, and will show "Touch confirmed" too.
+**Telling a touch from a timeout.** The key gives up after a fixed window --
+measured twice on panther at 15.1s and 14.9s -- and USB traffic runs for
+essentially all of it. So the two outcomes differ by duration: a touch stops
+the traffic early, a timeout runs the full ~15s first. The daemon counts the
+active samples and reports accordingly.
 
-Tunables, all environment variables on the unit: `YK_SOUND` (`none` to
-silence), `YK_ICON`, `YK_ICON_OK`, `YK_GRACE_SAMPLES`, `YK_POLL_INTERVAL`.
+| activity | card | sound |
+|---|---|---|
+| < 14s | "Touch confirmed", clears itself | — |
+| >= 14s | "Touch missed -- the key timed out after ~15s" | `dialog-error` |
+| daemon stopped mid-wait | "Touch prompt dismissed" | — |
+
+The threshold sits a second under the real timeout so a late touch is not
+mislabelled; the cost is that a touch in the final second reads as a miss. The
+third row matters because the trap has no idea how the wait ended, so it must
+claim neither outcome.
+
+Tunables, all environment variables on the unit: `YK_SOUND` and
+`YK_SOUND_MISS` (`none` to silence either), `YK_ICON`, `YK_ICON_OK`,
+`YK_ICON_MISS`, `YK_GRACE_SAMPLES`, `YK_MISS_SAMPLES`, `YK_POLL_INTERVAL`.
 Icon names must exist in the *current* icon theme — Omarchy themes switch it,
 and a missing name renders as a pink-and-black placeholder, which is why the
 defaults are names present in both Yaru and Adwaita.

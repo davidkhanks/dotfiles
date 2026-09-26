@@ -52,6 +52,27 @@ ICON_OK=${YK_ICON_OK:-object-select-symbolic}
 # Alternatives present here: dialog-warning, bell, message-new-instant, complete.
 SOUND=${YK_SOUND:-window-attention}
 
+# Icon for a missed touch. dialog-warning-symbolic is in both Yaru and
+# Adwaita; the non-symbolic dialog-warning is Yaru-only.
+ICON_MISS=${YK_ICON_MISS:-dialog-warning-symbolic}
+
+# The key gives up waiting after a fixed timeout -- measured at 15.1s on this
+# YubiKey, with USB traffic running for essentially that whole window. So the
+# two outcomes are distinguishable by how long the activity lasted:
+#
+#   touched      traffic stops EARLY, whenever the finger lands
+#   timed out    traffic runs the full ~15s, then stops
+#
+# Anything past this threshold that then goes quiet was almost certainly a
+# miss. Set a shade under the real timeout so a genuinely late touch is not
+# mislabelled; the cost is that a touch in the last second reads as a miss.
+MISS_SAMPLES=${YK_MISS_SAMPLES:-28}    # 28 x 0.5s = 14s
+
+# Sound for a missed touch, distinct from the prompt so the two are tellable
+# apart without looking. Also present: suspend-error, dialog-warning, bell.
+# YK_SOUND_MISS=none to stay silent.
+SOUND_MISS=${YK_SOUND_MISS:-dialog-error}
+
 find_device() {
   local d p
   for d in /sys/bus/usb/devices/*/idVendor; do
@@ -69,16 +90,21 @@ notify_id=""
 
 have_player() { command -v canberra-gtk-play >/dev/null 2>&1; }
 
+# Backgrounded and detached: the poll loop must not wait on audio, and a
+# missing player or a dead audio session must not take the daemon down.
+play_sound() {
+  local name=${1:-}
+  [[ -n $name && $name != none ]] || return 0
+  have_player || return 0
+  ( canberra-gtk-play -i "$name" >/dev/null 2>&1 & ) &
+}
+
 open_notification() {
   # -p prints the id so the notification can be dismissed the moment the touch
   # lands, rather than lingering after it is no longer true.
   notify_id="$(notify-send -p -u critical -a "$APP_NAME" -i "$ICON" -t 0 \
     "Touch your YubiKey" "An operation is waiting on the key." 2>/dev/null)" || notify_id=""
-  # Backgrounded and detached: the poll loop must not wait on audio, and a
-  # missing player or a dead audio session must not take the daemon down.
-  if [[ $SOUND != none && -n $SOUND ]] && have_player; then
-    ( canberra-gtk-play -i "$SOUND" >/dev/null 2>&1 & ) &
-  fi
+  play_sound "$SOUND"
 }
 
 # Omarchy will not let a sender dismiss a visible toast, so this replaces it
@@ -96,11 +122,28 @@ open_notification() {
 # itself a few seconds after the touch lands. Nothing to dismiss by hand.
 close_notification() {
   [[ -n $notify_id ]] || return 0
-  # NOTE: this fires whenever the USB traffic stops, which is normally the
-  # touch landing -- but an operation that times out or is cancelled without a
-  # touch also stops it, and would show this same message.
-  notify-send -r "$notify_id" -u low -a "$APP_NAME" -i "$ICON_OK" -t 1 \
-    "YubiKey" "Touch confirmed" >/dev/null 2>&1 || true
+  # Called with no argument from the signal trap: the daemon is going away
+  # while a prompt is up, and it has no idea how that wait ended. Clear the
+  # card without claiming either outcome.
+  if [[ -z ${1:-} ]]; then
+    notify-send -r "$notify_id" -u low -a "$APP_NAME" -i "$ICON" -t 1 \
+      "YubiKey" "Touch prompt dismissed" >/dev/null 2>&1 || true
+    notify_id=""
+    return 0
+  fi
+
+  if (( $1 >= MISS_SAMPLES )); then
+    # Ran the full timeout and then stopped: the key gave up, the operation
+    # failed, and the failure it produces is "agent refused operation" -- which
+    # looks identical to a stale PIV session. Saying so here is the whole point.
+    notify-send -r "$notify_id" -u normal -a "$APP_NAME" -i "$ICON_MISS" -t 8000 \
+      "Touch missed" "The key timed out after ~15s. Run the command again." \
+      >/dev/null 2>&1 || true
+    play_sound "$SOUND_MISS"
+  else
+    notify-send -r "$notify_id" -u low -a "$APP_NAME" -i "$ICON_OK" -t 1 \
+      "YubiKey" "Touch confirmed" >/dev/null 2>&1 || true
+  fi
   notify_id=""
 }
 
@@ -128,7 +171,7 @@ while :; do
     fi
   else
     # Counter stopped moving: the operation finished, one way or another.
-    (( active >= GRACE_SAMPLES )) && close_notification
+    (( active >= GRACE_SAMPLES )) && close_notification "$active"
     active=0
   fi
 
