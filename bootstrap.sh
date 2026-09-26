@@ -207,6 +207,16 @@ HYPRMONCFG_PLUGIN_URL="https://github.com/crmne/omarchy-hyprmoncfg.git"
 HYPRMONCFG_PLUGIN_ID="crmne.hyprmoncfg"
 AUR_HYPRMONCFG=(hyprmoncfg)
 
+# Keyboard backlight control from the bar. Bar-widget kind only -- no service,
+# so its QML runs only when the widget is drawn.
+KBDBRIGHTNESS_PLUGIN_URL="https://github.com/Anes-03/keyboard-brightness-plugin.git"
+KBDBRIGHTNESS_PLUGIN_ID="io.github.anes-03.keyboard-brightness"
+
+# Disk usage in the bar, with a panel listing the biggest directories. Declares
+# a service kind, so it runs continuously inside the shell process.
+STORAGE_PLUGIN_URL="https://github.com/zaki2993/zakarch.storage.git"
+STORAGE_PLUGIN_ID="zakarch.storage"
+
 AIRPODS_PLUGIN_URL="https://github.com/thisisgm/omarchy-pods"
 AIRPODS_PLUGIN_ID="io.github.thisisgm.omapods"
 PACKAGES_AIRPODS=(cmake ninja qt6-connectivity qt6-tools qt6-declarative pkgconf libpulse)
@@ -248,7 +258,7 @@ HOST_FILES=(
 # different things (no fan control on a laptop, for instance), and neither
 # should have to re-answer the prompts on every run.
 BOOTSTRAP_CONF="${BOOTSTRAP_CONF:-$DOTFILES_DIR/bootstrap.conf}"
-MODULE_KEYS=(yubikey coolercontrol slack brave webapps airpods hyprmoncfg omasettings omastats blesh gaming tailscale smb_shares rdp ssh_server herdr_nav work_repos work_setup nvim_default nvim_sync)
+MODULE_KEYS=(yubikey coolercontrol slack brave webapps airpods hyprmoncfg omasettings omastats keyboard_brightness storage_analyzer blesh gaming tailscale smb_shares rdp ssh_server herdr_nav work_repos work_setup nvim_default nvim_sync)
 declare -A MODULE_ENABLED=()
 
 module_desc() {
@@ -262,6 +272,8 @@ module_desc() {
     hyprmoncfg)    echo "Monitor profiles that auto-switch on hotplug (third-party plugin)" ;;
     omasettings)   echo "GUI settings window for Omarchy config (third-party plugin)" ;;
     omastats)      echo "System monitor bar widget (third-party plugin)" ;;
+    keyboard_brightness) echo "Keyboard backlight control in the bar (third-party plugin)" ;;
+    storage_analyzer)    echo "Disk usage bar widget with a Space Hogs panel (third-party plugin)" ;;
     blesh)         echo "ble.sh: fish-style autosuggestions for bash" ;;
     gaming)        echo "Steam, gamescope and the MangoHud overlay" ;;
     tailscale)     echo "Tailscale mesh VPN (daemon, Taildrop, bar widget, admin web app)" ;;
@@ -1634,6 +1646,44 @@ step_brave() {
   fi
 }
 
+step_keyboard_brightness() {
+  enabled keyboard_brightness || return 0
+  section "Keyboard brightness widget"
+
+  local dir="$HOME/.config/omarchy/plugins/$KBDBRIGHTNESS_PLUGIN_ID"
+  if [[ -d "$dir" ]]; then
+    ok "plugin present"
+  elif ! have omarchy; then
+    skip "omarchy not available"
+    return 0
+  elif acting "add plugin from $KBDBRIGHTNESS_PLUGIN_URL"; then
+    omarchy plugin add "$KBDBRIGHTNESS_PLUGIN_URL" --enable --yes && changed "plugin added" \
+      || fail "plugin add failed"
+  fi
+
+  note "A newly added plugin needs 'omarchy restart shell' before it renders."
+}
+
+step_storage_analyzer() {
+  enabled storage_analyzer || return 0
+  section "Storage widget"
+
+  local dir="$HOME/.config/omarchy/plugins/$STORAGE_PLUGIN_ID"
+  if [[ -d "$dir" ]]; then
+    ok "plugin present"
+  elif ! have omarchy; then
+    skip "omarchy not available"
+    return 0
+  elif acting "add plugin from $STORAGE_PLUGIN_URL"; then
+    # Declares a service kind, so this one runs continuously in the shell
+    # process rather than only while its panel is open. Opt-in on purpose.
+    omarchy plugin add "$STORAGE_PLUGIN_URL" --enable --yes && changed "plugin added" \
+      || fail "plugin add failed"
+  fi
+
+  note "A newly added plugin needs 'omarchy restart shell' before it renders."
+}
+
 step_omastats() {
   enabled omastats || return 0
   section "System monitor widget"
@@ -2181,6 +2231,8 @@ main() {
   step_hyprmoncfg
   step_omasettings
   step_omastats
+  step_keyboard_brightness
+  step_storage_analyzer
   step_tailscale
   step_smb_shares
   step_nautilus_bookmarks
