@@ -5,6 +5,7 @@ format = """
 $os\
 $username\
 $hostname\
+[ ](bg:surface0)\
 [](bg:peach fg:surface0)\
 $directory\
 [](fg:peach bg:green)\
@@ -105,15 +106,18 @@ style_root = "bg:surface0 fg:text"
 format = '[ $user]($style)'
 
 [hostname]
-# ssh_only defaults to TRUE, which shows the host only in an SSH session. That
-# is the wrong way round here: the confusion is telling panther from omarchy
-# after sshing between them, and a prompt that only names the host when remote
-# still leaves you guessing which local machine you are sitting at.
-ssh_only = false
+# Only when remoted in -- a local shell is on the machine in front of you, so
+# naming it adds nothing.
+ssh_only = true
 # Strip any domain suffix; MagicDNS names would otherwise make this long.
 trim_at = "."
 style = "bg:surface0 fg:text"
-format = '[@$hostname ]($style)'
+# No surrounding spaces. This module renders NOTHING in a local shell, so it
+# cannot own the space that closes the segment -- that is the literal
+# "[ ](bg:surface0)" in the main format, which is always present. Putting the
+# space here instead would leave the local prompt reading " davidkhanks" with
+# the username jammed against the powerline separator.
+format = '[@$hostname]($style)'
 
 [directory]
 style = "fg:mantle bg:peach"
