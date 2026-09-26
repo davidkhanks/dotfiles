@@ -12,8 +12,20 @@ Machine-specific files for this desktop. **Nothing here is portable.**
 ## What lives here and why
 
 ```
-etc/coolercontrol/config.toml    fan curves + device settings
+etc/coolercontrol/config.toml                        fan curves + device settings
+etc/systemd/system/mnt-spartacus-6TB_Storage.mount       SMB share on spartacus
+etc/systemd/system/mnt-spartacus-6TB_Storage.automount   its automount trigger
 ```
+
+The two mount units are **byte-identical to the pair in `hosts/panther/`** --
+same share, same mount point, and both machines run uid/gid 1000. They are
+duplicated rather than shared because `host-config` and `step_host_files`
+resolve everything under `hosts/<hostname>/` and the repo has no notion of a
+file common to several hosts. Edit one and you must edit the other; `cmp` is
+the check.
+
+Unlike `config.toml` below, nothing in them is hardware-derived, so copying
+them between hosts is fine -- which is exactly how they got here.
 
 Stow only targets `$HOME`, so root-owned files are tracked per host instead and
 applied with `host-config` rather than symlinked.
