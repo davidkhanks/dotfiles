@@ -24,6 +24,16 @@
 
 set -euo pipefail
 
+# Omarchy's CLI needs OMARCHY_PATH, and an interactive shell picks it up from
+# ~/.bashrc. A non-interactive `ssh host ./bootstrap.sh` does NOT read .bashrc,
+# so every `omarchy` call fails with "OMARCHY_PATH is not set" -- which is how
+# a remote run silently skipped all the plugin and bar steps while still
+# exiting 0. Source it here so the script does not depend on the caller's
+# shell having done it.
+if [[ -z ${OMARCHY_PATH:-} && -r /usr/share/omarchy/default/bash/env-bootstrap ]]; then
+  source /usr/share/omarchy/default/bash/env-bootstrap
+fi
+
 # ── Configuration ───────────────────────────────────────────────────────────
 DOTFILES_REPO="${DOTFILES_REPO:-https://github.com/davidkhanks/dotfiles.git}"
 DOTFILES_DIR="${DOTFILES_DIR:-$HOME/dotfiles}"

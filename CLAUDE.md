@@ -112,6 +112,19 @@ Omarchy's installer but deliberately never runs `tailscale up`: that is a
 browser auth flow, and running it every bootstrap would also stomp flags set
 by hand.
 
+**A non-interactive `ssh host ./bootstrap.sh` does not read `~/.bashrc`.** That
+is where `OMARCHY_PATH` comes from, so without it every `omarchy` call fails
+with "OMARCHY_PATH is not set" -- and because each step reports its own
+failure and keeps going, the run still **exits 0** while silently skipping
+every plugin and bar step. `bootstrap.sh` now sources
+`/usr/share/omarchy/default/bash/env-bootstrap` itself when `OMARCHY_PATH` is
+empty. Do not assume the caller's shell has set it.
+
+**Do not pass `-tt` to ssh when running bootstrap remotely.** It forces a PTY,
+`configure_modules` then believes it is interactive, and the run blocks
+forever on a prompt for any module key the remote `bootstrap.conf` lacks.
+Without a TTY it falls back to defaults, which is the documented behaviour.
+
 ## Elevation
 
 There is **no passwordless sudo**. Interactive `sudo` hangs in a non-TTY
