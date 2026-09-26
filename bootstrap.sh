@@ -1209,6 +1209,54 @@ declare -A OWN_PLUGIN_PLACEMENT=(
   [davidkhanks.lock]="center|--section center --before omarchy.indicators"
 )
 
+# State of a plugin as omarchy sees it: enabled, disabled, or absent.
+#
+# The listing is captured into a variable rather than piped into `grep -q`.
+# Under `set -o pipefail` grep -q exits on its first match, the upstream
+# `omarchy plugin list` dies of SIGPIPE, and pipefail turns that into a false
+# condition -- the trap CLAUDE.md documents. awk reads its input to the end,
+# so there is nothing to race.
+plugin_state() {
+  local id="$1" listing
+  have omarchy || { printf 'unknown\n'; return 0; }
+  listing="$(omarchy plugin list 2>/dev/null || true)"
+  awk -v id="$id" '$1 == id { print $2; found = 1; exit } END { if (!found) print "absent" }' \
+    <<<"$listing"
+}
+
+# Install a third-party plugin, or enable one that is already cloned.
+#
+# The two are NOT the same thing, which is what the old directory-existence
+# check got wrong. `omarchy plugin add --enable` clones first and enables
+# second, and the enable needs the running shell -- which a remote `ssh host
+# ./bootstrap.sh` cannot reach. That leaves the plugin cloned and disabled, and
+# a check for the directory then reports "plugin present" on every subsequent
+# run while never enabling it. That is exactly what happened on the desktop.
+ensure_plugin() {
+  local id="$1" url="$2" state
+  state="$(plugin_state "$id")"
+  case $state in
+    enabled)
+      ok "plugin enabled"
+      ;;
+    disabled)
+      if acting "enable $id (already cloned)"; then
+        omarchy plugin enable "$id" && changed "plugin enabled" \
+          || fail "could not enable $id"
+      fi
+      ;;
+    unknown)
+      skip "omarchy not available"
+      ;;
+    *)
+      if acting "add plugin from $url"; then
+        omarchy plugin add "$url" --enable --yes && changed "plugin added" \
+          || fail "plugin add failed"
+      fi
+      ;;
+  esac
+}
+
 step_own_plugins() {
   section "Own shell plugins"
 
@@ -1229,7 +1277,9 @@ step_own_plugins() {
     [[ -d "$dir" ]] || continue
     found=1
     id="$(basename "$dir")"
-    if omarchy plugin list 2>/dev/null | grep -qE "^${id}[[:space:]]+enabled"; then
+    # plugin_state, not a piped `grep -q`: see the helper for why that races
+    # under pipefail.
+    if [[ "$(plugin_state "$id")" == enabled ]]; then
       # Placement is applied only on first enable. Re-applying it every run
       # would undo any reordering done by dragging widgets on the bar, which
       # Omarchy supports and which shell.json -- not this repo -- owns.
@@ -1721,16 +1771,7 @@ step_keyboard_brightness() {
   enabled keyboard_brightness || return 0
   section "Keyboard brightness widget"
 
-  local dir="$HOME/.config/omarchy/plugins/$KBDBRIGHTNESS_PLUGIN_ID"
-  if [[ -d "$dir" ]]; then
-    ok "plugin present"
-  elif ! have omarchy; then
-    skip "omarchy not available"
-    return 0
-  elif acting "add plugin from $KBDBRIGHTNESS_PLUGIN_URL"; then
-    omarchy plugin add "$KBDBRIGHTNESS_PLUGIN_URL" --enable --yes && changed "plugin added" \
-      || fail "plugin add failed"
-  fi
+  ensure_plugin "$KBDBRIGHTNESS_PLUGIN_ID" "$KBDBRIGHTNESS_PLUGIN_URL"
 
   note "A newly added plugin needs 'omarchy restart shell' before it renders."
 }
@@ -1739,18 +1780,7 @@ step_storage_analyzer() {
   enabled storage_analyzer || return 0
   section "Storage widget"
 
-  local dir="$HOME/.config/omarchy/plugins/$STORAGE_PLUGIN_ID"
-  if [[ -d "$dir" ]]; then
-    ok "plugin present"
-  elif ! have omarchy; then
-    skip "omarchy not available"
-    return 0
-  elif acting "add plugin from $STORAGE_PLUGIN_URL"; then
-    # Declares a service kind, so this one runs continuously in the shell
-    # process rather than only while its panel is open. Opt-in on purpose.
-    omarchy plugin add "$STORAGE_PLUGIN_URL" --enable --yes && changed "plugin added" \
-      || fail "plugin add failed"
-  fi
+  ensure_plugin "$STORAGE_PLUGIN_ID" "$STORAGE_PLUGIN_URL"
 
   note "A newly added plugin needs 'omarchy restart shell' before it renders."
 }
@@ -1759,21 +1789,7 @@ step_omastats() {
   enabled omastats || return 0
   section "System monitor widget"
 
-  local dir="$HOME/.config/omarchy/plugins/$OMASTATS_PLUGIN_ID"
-  if [[ -d "$dir" ]]; then
-    ok "plugin present"
-  elif ! have omarchy; then
-    skip "omarchy not available"
-    return 0
-  elif acting "add plugin from $OMASTATS_PLUGIN_URL"; then
-    # Third-party QML declaring a service kind, so it runs inside the shell
-    # process continuously rather than only when its panel is open. --yes
-    # supplies the confirmation `omarchy plugin add` demands before running
-    # unsandboxed third-party code; that prompt is the reason this is its own
-    # opt-in module rather than something bootstrap does by default.
-    omarchy plugin add "$OMASTATS_PLUGIN_URL" --enable --yes && changed "plugin added" \
-      || fail "plugin add failed"
-  fi
+  ensure_plugin "$OMASTATS_PLUGIN_ID" "$OMASTATS_PLUGIN_URL"
 
   note "A newly added plugin needs 'omarchy restart shell' before it renders."
 }
@@ -1782,18 +1798,7 @@ step_omasettings() {
   enabled omasettings || return 0
   section "Settings GUI"
 
-  local dir="$HOME/.config/omarchy/plugins/$OMASETTINGS_PLUGIN_ID"
-  if [[ -d "$dir" ]]; then
-    ok "plugin present"
-  elif ! have omarchy; then
-    skip "omarchy not available"
-    return 0
-  elif acting "add plugin from $OMASETTINGS_PLUGIN_URL"; then
-    # Third-party QML with a service kind, so it runs inside the shell process
-    # continuously. Opt-in on purpose.
-    omarchy plugin add "$OMASETTINGS_PLUGIN_URL" --enable --yes && changed "plugin added" \
-      || fail "plugin add failed"
-  fi
+  ensure_plugin "$OMASETTINGS_PLUGIN_ID" "$OMASETTINGS_PLUGIN_URL"
 
   note "OmaSettings edits Omarchy config files, several of which are symlinks
      into this repo (hypr/bindings.lua, hypr/looknfeel.lua, .tmux.conf,
@@ -1813,17 +1818,7 @@ step_hyprmoncfg() {
     fail "hyprmoncfg binary missing (AUR install did not run or failed)"
   fi
 
-  local dir="$HOME/.config/omarchy/plugins/$HYPRMONCFG_PLUGIN_ID"
-  if [[ -d "$dir" ]]; then
-    ok "plugin present"
-  elif ! have omarchy; then
-    skip "omarchy not available"
-  elif acting "add plugin from $HYPRMONCFG_PLUGIN_URL"; then
-    # Third-party QML, and it declares a service kind, so it runs continuously
-    # inside the shell process rather than only when opened. Opt-in on purpose.
-    omarchy plugin add "$HYPRMONCFG_PLUGIN_URL" --enable --yes && changed "plugin added" \
-      || fail "plugin add failed"
-  fi
+  ensure_plugin "$HYPRMONCFG_PLUGIN_ID" "$HYPRMONCFG_PLUGIN_URL"
 
   note "A newly added plugin needs 'omarchy restart shell' before it renders.
      Monitor profiles are stored by the hyprmoncfg binary, not in this repo."
@@ -1833,18 +1828,7 @@ step_airpods() {
   enabled airpods || return 0
   section "AirPods bar widget"
 
-  local dir="$HOME/.config/omarchy/plugins/$AIRPODS_PLUGIN_ID"
-  if [[ -d "$dir" ]]; then
-    ok "plugin present"
-  elif ! have omarchy; then
-    skip "omarchy not available"
-    return 0
-  elif acting "add plugin from $AIRPODS_PLUGIN_URL"; then
-    # Third-party QML runs inside the shell process; this is a deliberate
-    # opt-in, which is why it is its own module.
-    omarchy plugin add "$AIRPODS_PLUGIN_URL" --enable --yes && changed "plugin added" \
-      || { fail "plugin add failed"; return 0; }
-  fi
+  ensure_plugin "$AIRPODS_PLUGIN_ID" "$AIRPODS_PLUGIN_URL"
 
   # The daemon is compiled, so a fresh clone has no binary until setup runs.
   if [[ -x "$HOME/.local/bin/librepods" ]]; then

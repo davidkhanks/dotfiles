@@ -112,6 +112,14 @@ Omarchy's installer but deliberately never runs `tailscale up`: that is a
 browser auth flow, and running it every bootstrap would also stomp flags set
 by hand.
 
+**"Cloned" is not "enabled" for a plugin.** `omarchy plugin add --enable`
+clones first and enables second, and the enable needs the running shell --
+which a remote `ssh host ./bootstrap.sh` cannot reach. Checking only for
+`~/.config/omarchy/plugins/<id>/` therefore reports "plugin present" forever
+while the plugin stays disabled. Use `plugin_state <id>`, which returns
+`enabled`/`disabled`/`absent`, and `ensure_plugin <id> <url>`, which adds or
+enables as appropriate.
+
 **A non-interactive `ssh host ./bootstrap.sh` does not read `~/.bashrc`.** That
 is where `OMARCHY_PATH` comes from, so without it every `omarchy` call fails
 with "OMARCHY_PATH is not set" -- and because each step reports its own
