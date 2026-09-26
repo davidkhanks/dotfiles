@@ -156,6 +156,7 @@ Several stowed files are targets of Omarchy commands that do a plain `cp`:
 |---|---|
 | `omarchy branding screensaver reset` | `omarchy/.config/omarchy/branding/screensaver.txt` |
 | `omarchy refresh config hypr/bindings.lua` | `hypr/.config/hypr/bindings.lua` |
+| `omarchy refresh config foot/foot.ini` | `foot/.config/foot/foot.ini` |
 | OmaSettings GUI (third-party plugin) | `hypr/bindings.lua`, `hypr/looknfeel.lua`, `.tmux.conf`, `.bashrc` |
 
 They land in the repo, not just in `~`. The `omarchy` commands overwrite with

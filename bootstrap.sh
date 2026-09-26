@@ -29,7 +29,7 @@ DOTFILES_REPO="${DOTFILES_REPO:-https://github.com/davidkhanks/dotfiles.git}"
 DOTFILES_DIR="${DOTFILES_DIR:-$HOME/dotfiles}"
 
 # Stow packages, in the order they should be applied.
-STOW_PACKAGES=(bash bin fish hypr nvim omarchy slack ssh starship tmux)
+STOW_PACKAGES=(bash bin fish foot hypr nvim omarchy slack ssh starship tmux)
 
 # Pacman packages this setup depends on.
 #   stow             -- symlink farm manager for the dotfiles
@@ -651,6 +651,9 @@ step_stow() {
       # than made a module, same as hypr/omarchy above, so existing
       # bootstrap.conf answers stay valid.
       fish) have fish || { skip "$pkg (fish not installed)"; continue; } ;;
+      # Omarchy's default terminal, so present on every Omarchy box, but the
+      # CachyOS drive runs KDE and may not have it.
+      foot) have foot || { skip "$pkg (foot not installed)"; continue; } ;;
     esac
     if [[ ! -d "$DOTFILES_DIR/$pkg" ]]; then
       fail "package '$pkg' missing from repo"

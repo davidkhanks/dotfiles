@@ -209,6 +209,7 @@ nvim/                 Neovim config (davidkhanks-nvim)
 omarchy/              Omarchy branding + hooks
 slack/                Slack desktop entry with Wayland flags
 ssh/                  ~/.ssh/config
+foot/                 foot terminal config
 starship/  tmux/      prompt and tmux
 hosts/<hostname>/     machine-specific root-owned files (not stowed)
 docs/                 reference notes
