@@ -354,6 +354,16 @@ mirrors their opacity (0 idle, 0.45 revealed). Width is held constant rather
 than collapsed, matching the indicators, so revealing does not shove the clock
 sideways.
 
+The same "the app owns this file" problem applies to **middle-click paste**.
+A 3-finger press on the trackpad synthesises a middle click, and the
+primary-selection paste it triggers dumps text into whatever has focus. The
+button itself is no longer blocked — Hyprland binds carry no device field, so
+swallowing it at the compositor also killed middle-click-to-open-in-new-tab on
+the external mouse. `step_primary_paste` disables the *paste* instead, in dconf
+and in both `gtk-{3,4}.0/settings.ini`, because dconf alone is not reliable for
+GTK3 apps launched outside a full GNOME session. Terminals implement primary
+paste themselves and are left alone on purpose.
+
 Widget *properties* have the same problem, and `BAR_SETTINGS` in
 `bootstrap.sh` closes it the same way — a list of `<widget-id>|<key>|<json>`
 reapplied on every run:

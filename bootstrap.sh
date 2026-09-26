@@ -157,6 +157,27 @@ WEBAPPS=(
 TAILSCALE_PLUGIN_ID="omarchy.tailscale"
 TAILSCALE_RECEIVE_UNIT="omarchy-tailscale-receive.service"
 
+# Middle-click primary-selection paste, turned off. The trackpad synthesises a
+# middle click from a 3-finger press, which is easy to do mid-swipe, and the
+# paste is what does the damage -- it dumps the selection into whatever has
+# focus. The long rationale is in hypr/.config/hypr/bindings.lua; the short
+# version is that Hyprland binds carry no device field, so swallowing the
+# button at the compositor also killed middle-click-to-open-in-new-tab on the
+# external mouse. Disabling the paste instead keeps the button working.
+#
+# Not stowed: dconf is a binary database, and the settings.ini files are also
+# written by GTK tooling. Reapplied from here instead, same as BAR_SETTINGS.
+#
+# Primary paste is per-toolkit. This covers GTK and, in practice, Chromium.
+# Terminals implement it themselves and are deliberately left alone -- a middle
+# click in a terminal is a much less likely accident, and useful there.
+PRIMARY_PASTE_SCHEMA="org.gnome.desktop.interface"
+PRIMARY_PASTE_KEY="gtk-enable-primary-paste"
+GTK_SETTINGS_FILES=(
+  "$HOME/.config/gtk-3.0/settings.ini"
+  "$HOME/.config/gtk-4.0/settings.ini"
+)
+
 # Bar widget properties. These live in ~/.config/omarchy/shell.json, which is
 # deliberately NOT tracked -- Omarchy rewrites it on every `omarchy bar`
 # command and from the settings UI -- so anything worth keeping is reapplied
@@ -1550,6 +1571,43 @@ step_herdr_resize() {
   fi
 }
 
+step_primary_paste() {
+  section "Middle-click paste"
+
+  # dconf first: this is what GTK4 and anything running under a session bus
+  # reads. gsettings is absent on a machine with no GTK stack at all.
+  if ! have gsettings; then
+    skip "gsettings not installed"
+  elif [[ "$(gsettings get "$PRIMARY_PASTE_SCHEMA" "$PRIMARY_PASTE_KEY" 2>/dev/null)" == "false" ]]; then
+    ok "primary paste disabled (dconf)"
+  elif acting "disable $PRIMARY_PASTE_KEY in dconf"; then
+    gsettings set "$PRIMARY_PASTE_SCHEMA" "$PRIMARY_PASTE_KEY" false \
+      && changed "primary paste disabled in dconf" || fail "gsettings set failed"
+  fi
+
+  # The ini files as well: dconf alone is not reliable for GTK3 apps launched
+  # outside a full GNOME session, which is every app here.
+  local f line
+  for f in "${GTK_SETTINGS_FILES[@]}"; do
+    line=""
+    [[ -r $f ]] && line="$(grep -m1 "^${PRIMARY_PASTE_KEY}=" "$f" 2>/dev/null || true)"
+    if [[ $line == "${PRIMARY_PASTE_KEY}=false" ]]; then
+      ok "${f#$HOME/} set"
+    elif acting "set $PRIMARY_PASTE_KEY=false in ${f#$HOME/}"; then
+      mkdir -p "${f%/*}"
+      [[ -e $f ]] || printf '[Settings]\n' > "$f"
+      if [[ -n $line ]]; then
+        sed -i "s/^${PRIMARY_PASTE_KEY}=.*/${PRIMARY_PASTE_KEY}=false/" "$f"
+      else
+        # Insert under the first [Settings] header, adding one if absent.
+        grep -q '^\[Settings\]' "$f" || printf '[Settings]\n' >> "$f"
+        sed -i "0,/^\\[Settings\\]/s//[Settings]\\n${PRIMARY_PASTE_KEY}=false/" "$f"
+      fi
+      changed "set $PRIMARY_PASTE_KEY=false in ${f#$HOME/}"
+    fi
+  done
+}
+
 step_bar_settings() {
   section "Bar widget settings"
 
@@ -2227,6 +2285,7 @@ main() {
   step_webapps
   step_own_plugins
   step_bar_settings
+  step_primary_paste
   step_airpods
   step_hyprmoncfg
   step_omasettings

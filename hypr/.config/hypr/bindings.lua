@@ -71,14 +71,20 @@ o.bind("SUPER + SHIFT + L", "Swap window to the right", hl.dsp.window.swap({ dir
 --
 -- libinput offers no way to drop just the 3-finger mapping. clickfinger_button_map
 -- is not in this Hyprland build, and turning clickfinger_behavior off would
--- take two-finger right-click with it. Binding the button is the surgical
--- option: binds:pass_mouse_when_bound defaults to false, so a bound mouse
--- button is swallowed by the compositor and never reaches the application.
--- A Lua function that does nothing is the cheapest possible handler -- no
--- process is spawned, unlike an `exec true`.
+-- take two-finger right-click with it.
 --
--- CAVEAT: Hyprland binds are not per-device, so this also disables the middle
--- button on any external mouse -- including middle-click-to-close-tab and
--- middle-click-to-open-link-in-new-tab in browsers. Delete this block to get
--- both back.
-hl.bind("mouse:274", function() end, { mouse = true })
+-- This used to bind mouse:274 to an empty Lua function, which swallowed the
+-- button at the compositor (binds:pass_mouse_when_bound defaults to false).
+-- That worked, but Hyprland binds carry no device field -- confirmed against
+-- 0.56, whose bind objects expose modmask/key/dispatcher and nothing to scope
+-- them by device -- so it also killed the middle button on the external mouse,
+-- taking middle-click-to-open-link-in-new-tab with it.
+--
+-- The button is no longer bound. The complaint was never the click, it was the
+-- primary-selection PASTE that a stray click triggers, so that is what is
+-- turned off instead -- gtk-enable-primary-paste=false, set by
+-- step_primary_paste in bootstrap.sh. Middle click now reaches applications:
+-- a link opens in a new tab, and a stray 3-finger press does nothing.
+--
+-- Primary paste is per-toolkit, so anything that implements it itself rather
+-- than through GTK needs its own setting; the terminals are the ones to check.
