@@ -1,0 +1,21 @@
+[Unit]
+Description=Notify when the YubiKey is waiting for a touch
+Documentation=man:yk-touch-notify
+# Needs a session bus and a running notification daemon, so it belongs to the
+# graphical session rather than the login session.
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/yk-touch-notify
+# The script polls a sysfs counter and sleeps; if it dies, something external
+# went wrong (key removed mid-read, session bus restart), so just bring it back.
+Restart=always
+RestartSec=5
+# One file read every 500ms. Keep it out of the way of anything that matters.
+Nice=10
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=graphical-session.target

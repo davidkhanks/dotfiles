@@ -1902,6 +1902,21 @@ step_ssh_agent() {
     changed "ssh-agent.service started"
   fi
 
+  # Desktop notification when the key is waiting for a touch. A missed touch
+  # fails with the same "agent refused operation" as a stale PIV session, so
+  # this removes both the missed touches and the misdiagnosis. See the header
+  # of bin/.local/bin/yk-touch-notify for how it detects a pending touch.
+  local notify_unit=yk-touch-notify.service
+  if [[ ! -e "$HOME/.config/systemd/user/$notify_unit" ]]; then
+    skip "$notify_unit missing (stow the ssh package first)"
+  elif [[ "$(systemctl --user is-enabled "$notify_unit" 2>/dev/null)" == "enabled" ]]; then
+    ok "$notify_unit enabled"
+  elif acting "enable $notify_unit"; then
+    systemctl --user daemon-reload
+    systemctl --user enable --now "$notify_unit" && changed "$notify_unit enabled" \
+      || fail "could not enable $notify_unit"
+  fi
+
   # udev -> systemd bridge: replugging the key reloads the PKCS#11 module.
   local rule=/etc/udev/rules.d/85-yubikey-ssh-reload.rules
   if [[ -f "$rule" ]]; then

@@ -91,6 +91,51 @@ before the right key is tried. `IdentityFile` + `IdentitiesOnly` restricts it to
 requires its own `Host` block with an explicit `IdentityFile`. Do not relax the
 global block — that reintroduces the `MaxAuthTries` failure.
 
+## Touch notifications
+
+A missed touch and a stale PIV session fail with the *same* message —
+`agent refused operation` — so a missed touch is easy to misdiagnose as a
+broken agent. `yk-touch-notify` (a systemd user service, enabled by
+`step_ssh_agent`) puts a desktop notification and a sound on screen about two
+seconds into any wait.
+
+**How it knows.** Nothing in sysfs flags a pending touch, but the USB request
+counter is a clean proxy. Measured on panther:
+
+| state | `urbnum` |
+|---|---|
+| idle | **0/sec** |
+| pending touch | 3-4/sec, sustained for the whole wait |
+| completed operation | one short burst, then silent |
+
+While the card waits, the CCID layer keeps polling it. The baseline is a true
+zero, so sustained activity means an operation is genuinely in flight, and
+anything still in flight after the grace period is waiting on a human. That
+makes it work for everything without wrapping any commands — `git push`, plain
+`ssh`, `age -d`, `ssh-add -s`.
+
+**Two Omarchy quirks it works around.** Its notification service returns
+duration `0` for `urgency=critical`, so the prompt never auto-expires — good
+while waiting, useless afterwards. And its `closed` handler only drops an
+internal reference, never calling `removePopupsByOriginalId`, so a sender's
+`CloseNotification` is received and does nothing visible. The prompt is
+therefore *replaced* by a low-urgency "Touch confirmed" card rather than
+closed; an update does run `removePopupsByOriginalId`, and low urgency
+Omarchy will expire (5s floor).
+
+The server also advertises no `sound` capability, so the `sound-name` hint is
+ignored and the daemon plays the sound itself through `canberra-gtk-play`.
+
+**Caveat:** the daemon sees USB traffic stop, not the operation's exit status.
+An operation that times out or is cancelled without a touch also stops the
+traffic, and will show "Touch confirmed" too.
+
+Tunables, all environment variables on the unit: `YK_SOUND` (`none` to
+silence), `YK_ICON`, `YK_ICON_OK`, `YK_GRACE_SAMPLES`, `YK_POLL_INTERVAL`.
+Icon names must exist in the *current* icon theme — Omarchy themes switch it,
+and a missing name renders as a pink-and-black placeholder, which is why the
+defaults are names present in both Yaru and Adwaita.
+
 ## Checks that need no PIN
 
 ```bash

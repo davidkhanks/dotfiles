@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+#
+# yk-touch-notify -- desktop notification when the YubiKey is waiting for a touch.
+#
+# The key blinks when it wants a touch, which is no use if you are looking at
+# the screen. A missed touch fails with the same message as a stale PIV session
+# ("agent refused operation"), so it is also easy to misdiagnose.
+#
+# HOW IT KNOWS. There is no "touch pending" flag anywhere in sysfs, but the USB
+# request counter is a clean proxy. Measured on this machine:
+#
+#     idle                 0 URBs/sec
+#     pending touch      3-4 URBs/sec, sustained for as long as it waits
+#     completed op       one short burst, then silent again
+#
+# While the card waits, the CCID layer keeps polling it, so the counter ticks
+# steadily. The baseline is a true zero, so sustained activity means an
+# operation is genuinely in flight -- and any operation still in flight after
+# the grace period is one waiting on a human.
+#
+# That makes this work for everything, with no command wrapping: git push over
+# SSH, plain ssh, `age -d`, ssh-add -s, anything that reaches the token.
+#
+# Re-resolves the device by vendor id on every cycle, so unplugging and
+# replugging into a different port does not need a restart.
+
+set -uo pipefail
+
+VENDOR_ID=1050                 # Yubico
+POLL_INTERVAL=${YK_POLL_INTERVAL:-0.5}
+GRACE_SAMPLES=${YK_GRACE_SAMPLES:-4}   # 4 x 0.5s = ~2s before notifying
+APP_NAME="YubiKey"
+# media-flash is a USB stick, and it is present in Yaru (the theme in use) as
+# well as Adwaita, so it resolves in both. An icon name that the theme does not
+# carry renders as the missing-icon placeholder -- auth-fingerprint has zero
+# files installed and showed up as pink and black squares.
+ICON=${YK_ICON:-media-flash}
+# Confirmation icon. object-select-symbolic is the only checkmark present in
+# BOTH Yaru (the current icon theme) and Adwaita, and Omarchy themes switch the
+# icon theme -- a name the theme lacks renders as the missing-icon placeholder.
+# Yaru also has emblem-default (a green tick, better looking, Yaru-only) if you
+# never change themes: YK_ICON_OK=emblem-default.
+ICON_OK=${YK_ICON_OK:-object-select-symbolic}
+
+# Sound played when the touch prompt appears. The notification server does not
+# do this for us: quickshell's GetCapabilities returns
+# persistence/body/body-markup/body-hyperlinks/actions/icon-static and no
+# "sound", so the freedesktop sound-name hint is ignored outright.
+#
+# canberra-gtk-play takes a sound-theme NAME rather than a path, so it follows
+# whatever sound theme is installed. Set YK_SOUND=none to stay silent.
+# Alternatives present here: dialog-warning, bell, message-new-instant, complete.
+SOUND=${YK_SOUND:-window-attention}
+
+find_device() {
+  local d p
+  for d in /sys/bus/usb/devices/*/idVendor; do
+    [[ -r $d ]] || continue
+    [[ "$(<"$d")" == "$VENDOR_ID" ]] || continue
+    p=${d%/idVendor}
+    [[ -r "$p/urbnum" ]] || continue
+    printf '%s\n' "$p"
+    return 0
+  done
+  return 1
+}
+
+notify_id=""
+
+have_player() { command -v canberra-gtk-play >/dev/null 2>&1; }
+
+open_notification() {
+  # -p prints the id so the notification can be dismissed the moment the touch
+  # lands, rather than lingering after it is no longer true.
+  notify_id="$(notify-send -p -u critical -a "$APP_NAME" -i "$ICON" -t 0 \
+    "Touch your YubiKey" "An operation is waiting on the key." 2>/dev/null)" || notify_id=""
+  # Backgrounded and detached: the poll loop must not wait on audio, and a
+  # missing player or a dead audio session must not take the daemon down.
+  if [[ $SOUND != none && -n $SOUND ]] && have_player; then
+    ( canberra-gtk-play -i "$SOUND" >/dev/null 2>&1 & ) &
+  fi
+}
+
+# Omarchy will not let a sender dismiss a visible toast, so this replaces it
+# instead of closing it. Two things in its notification service combine:
+#
+#   durationFor()   urgency=critical returns 0, meaning the popup NEVER expires
+#   closed signal   only drops an internal ref; it never removes the popup card
+#
+# So CloseNotification is received and does nothing visible, and the critical
+# toast sits there until dismissed by hand. Replacing by id is handled properly
+# -- an update runs removePopupsByOriginalId -- so the critical card is swapped
+# for a low-urgency one, which Omarchy does expire (its floor is 5s).
+#
+# Net effect: sticky for as long as the key is actually waiting, then clears
+# itself a few seconds after the touch lands. Nothing to dismiss by hand.
+close_notification() {
+  [[ -n $notify_id ]] || return 0
+  # NOTE: this fires whenever the USB traffic stops, which is normally the
+  # touch landing -- but an operation that times out or is cancelled without a
+  # touch also stops it, and would show this same message.
+  notify-send -r "$notify_id" -u low -a "$APP_NAME" -i "$ICON_OK" -t 1 \
+    "YubiKey" "Touch confirmed" >/dev/null 2>&1 || true
+  notify_id=""
+}
+
+trap 'close_notification; exit 0' TERM INT
+
+dev=""
+last=""
+active=0
+
+while :; do
+  if [[ -z $dev || ! -r "$dev/urbnum" ]]; then
+    # Key unplugged or moved ports. Drop any stale notification and rescan.
+    close_notification
+    active=0
+    last=""
+    dev="$(find_device)" || { sleep 2; continue; }
+  fi
+
+  now="$(<"$dev/urbnum")" 2>/dev/null || { dev=""; continue; }
+
+  if [[ -n $last && $now != "$last" ]]; then
+    active=$((active + 1))
+    if (( active == GRACE_SAMPLES )); then
+      open_notification
+    fi
+  else
+    # Counter stopped moving: the operation finished, one way or another.
+    (( active >= GRACE_SAMPLES )) && close_notification
+    active=0
+  fi
+
+  last="$now"
+  sleep "$POLL_INTERVAL"
+done
