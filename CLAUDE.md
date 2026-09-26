@@ -332,6 +332,19 @@ Full detail in `docs/thermals.md` and `docs/yubikey-ssh.md`. The short version:
   WireGuard `.conf` carries a **private key that cannot go in this public
   repo**, are written up in `docs/vpn.md`. Settle the kill-switch question
   before writing a `vpn` module.
+- **`hosts/` has no concept of a file shared between machines.** Both
+  `host-config` (`HOST="$(hostnamectl hostname)"`) and `step_host_files`
+  (`hosts/$HOSTNAME_SHORT`) resolve everything under one per-hostname
+  directory, so a file wanted on two machines has to exist twice. Today that
+  is the pair of SMB mount units, byte-identical in `hosts/panther/` and
+  `hosts/omarchy/` — same share, same mount point, both boxes on uid/gid 1000,
+  nothing hardware-derived. The risk is silent drift: edit one, forget the
+  other, and nothing complains. Options when it becomes worth fixing: a
+  `hosts/_common/` layer applied before the host directory; repo-internal
+  symlinks (check whether `host-config` copies or follows them first); or keep
+  duplicating and add a cheap guard that warns when same-named files differ
+  across host directories. The guard alone would remove most of the risk for
+  very little code.
 - **macOS support is designed but not built.** An existing MacBook stays in
   occasional use and wants the same tool set. The plan, the measurement it
   rests on (36 of 65 tracked files are already OS-agnostic; exactly one file,
