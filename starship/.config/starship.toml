@@ -4,6 +4,7 @@ format = """
 [](surface0)\
 $os\
 $username\
+$hostname\
 [](bg:peach fg:surface0)\
 $directory\
 [](fg:peach bg:green)\
@@ -99,7 +100,20 @@ RedHatEnterprise = "󱄛"
 show_always = true
 style_user = "bg:surface0 fg:text"
 style_root = "bg:surface0 fg:text"
-format = '[ $user ]($style)'
+# No trailing space: [hostname] supplies the "@host " that closes this segment,
+# so the two render as one unit -- " davidkhanks@panther ".
+format = '[ $user]($style)'
+
+[hostname]
+# ssh_only defaults to TRUE, which shows the host only in an SSH session. That
+# is the wrong way round here: the confusion is telling panther from omarchy
+# after sshing between them, and a prompt that only names the host when remote
+# still leaves you guessing which local machine you are sitting at.
+ssh_only = false
+# Strip any domain suffix; MagicDNS names would otherwise make this long.
+trim_at = "."
+style = "bg:surface0 fg:text"
+format = '[@$hostname ]($style)'
 
 [directory]
 style = "fg:mantle bg:peach"
