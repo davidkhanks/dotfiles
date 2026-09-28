@@ -311,6 +311,14 @@ live in the `omarchy` stow package under
 
 - **`davidkhanks.screenshot`** — left-click captures a region, right-click
   fullscreen. Sits in the right section.
+- **`davidkhanks.kblayout`** — click toggles every keyboard between the `us`
+  and `us(intl)` layouts, showing `US` or `INTL`. Sits in the **centre** next
+  to the lock button. It exists because `omarchy.keyboard-layout` could not do
+  the job on this hardware: that widget must pick *one* keyboard to switch, and
+  the Massdrop ALT presents four keyboard devices, of which the furthest-
+  advanced (`…-alt-keyboard-1`) is not the one producing keystrokes. This one
+  names no device and switches the whole seat with `switchxkblayout all`, so
+  every device moves together and any of them reports the right answer.
 - **`davidkhanks.lock`** — left-click locks the session (`omarchy-system-lock`),
   right-click opens the system menu. Sits in the **centre** section immediately
   left of `omarchy.indicators`, and hides and reveals with the indicators
@@ -329,6 +337,14 @@ needs `omarchy bar move --before`/`--after`:
 ```bash
 [davidkhanks.lock]="center|--section center --before omarchy.indicators"
 ```
+
+`BAR_DISABLED` is the other half of this: first-party widgets deliberately
+turned off because something else took their place (`omarchy.workspaces` for
+`jankeesvw.workspace-name`, `omarchy.keyboard-layout` for
+`davidkhanks.kblayout`). Omarchy ships both **enabled**, so without the list a
+rebuild brings them back alongside their replacements and the bar shows each
+job twice. Only widgets in Omarchy's default layout belong there — one that
+ships disabled is already off.
 
 Placement is applied **only on first enable**. Re-applying it every run would
 undo any reordering done by dragging widgets on the bar, which Omarchy supports

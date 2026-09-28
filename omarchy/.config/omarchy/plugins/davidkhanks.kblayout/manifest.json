@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "davidkhanks.kblayout",
+  "name": "Keyboard layout toggle",
+  "version": "1.0.0",
+  "author": "davidkhanks",
+  "description": "Toggle between the US and US-International layouts",
+  "kinds": ["bar-widget"],
+  "entryPoints": { "barWidget": "KbLayout.qml" },
+  "barWidget": {
+    "displayName": "Keyboard layout toggle",
+    "description": "Click to switch every keyboard between US and US-International.",
+    "category": "Compositor",
+    "allowMultiple": false,
+    "defaultSection": "center"
+  }
+}

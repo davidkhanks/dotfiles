@@ -1207,6 +1207,21 @@ step_yubikey_ssh() {
 # position inside it -- ordering needs `omarchy bar move --before/--after`.
 declare -A OWN_PLUGIN_PLACEMENT=(
   [davidkhanks.lock]="center|--section center --before omarchy.indicators"
+  [davidkhanks.kblayout]="center|--section center --after davidkhanks.lock"
+)
+
+# First-party bar widgets deliberately turned off because something else took
+# their place. Omarchy ships both ENABLED, so without this a rebuild brings
+# them back alongside their replacements and the bar shows each job twice.
+#
+# Only widgets in Omarchy's default layout belong here. A widget that ships
+# disabled is already off and needs no help.
+BAR_DISABLED=(
+  # replaced by jankeesvw.workspace-name
+  "omarchy.workspaces"
+  # replaced by davidkhanks.kblayout, which switches the whole seat rather than
+  # trying to guess which of the ALT's four keyboard devices to name
+  "omarchy.keyboard-layout"
 )
 
 # State of a plugin as omarchy sees it: enabled, disabled, or absent.
@@ -1255,6 +1270,30 @@ ensure_plugin() {
       fi
       ;;
   esac
+}
+
+step_bar_disabled() {
+  section "Disabled bar widgets"
+  have omarchy || { skip "omarchy not available"; return 0; }
+
+  local id state
+  for id in "${BAR_DISABLED[@]}"; do
+    state="$(plugin_state "$id")"
+    case $state in
+      disabled|absent)
+        ok "$id off"
+        ;;
+      enabled)
+        if acting "disable $id"; then
+          omarchy plugin disable "$id" && changed "disabled $id" \
+            || fail "could not disable $id"
+        fi
+        ;;
+      *)
+        skip "$id state unknown"
+        ;;
+    esac
+  done
 }
 
 step_own_plugins() {
@@ -2296,6 +2335,7 @@ main() {
   step_brave
   step_webapps
   step_own_plugins
+  step_bar_disabled
   step_bar_settings
   step_primary_paste
   step_airpods

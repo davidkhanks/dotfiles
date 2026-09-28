@@ -125,6 +125,36 @@ hl.config({
   },
 })
 
+-- Two US layouts: plain, and International-with-dead-keys for writing
+-- Portuguese and Italian. Toggle with the omarchy.keyboard-layout bar widget
+-- (left click) or `hyprctl switchxkblayout <keyboard> next`.
+--
+-- Plain "us" MUST come first. Hyprland resolves keybindings against the first
+-- entry in kb_layout, and the dead-key variant would otherwise change what
+-- every bind matches -- Omarchy's own default config has the same caveat.
+--
+-- The variant list is positional and comma-separated, one slot per layout:
+-- "" for the first (plain us), "intl" for the second. It is not a single
+-- value applied to everything.
+--
+-- intl vs altgr-intl: intl puts accents on dead keys, so ' then a gives a
+-- with an acute, ~ then a gives a tilde, and so on -- which also means a bare
+-- quote waits for the next keystroke. That is the right trade here precisely
+-- because this is a layout you switch INTO and back out of; altgr-intl leaves
+-- quotes alone and hides the accents behind AltGr, which suits someone who
+-- stays in one layout all day.
+--
+-- kb_options is restated because setting kb_layout here replaces Omarchy's
+-- whole input block; dropping it would silently lose compose-on-capslock and
+-- the both-shift capslock cancel.
+hl.config({
+  input = {
+    kb_layout = "us,us",
+    kb_variant = ",intl",
+    kb_options = "compose:caps,shift:both_capslock_cancel",
+  },
+})
+
 -- Keyboard layout and options.
 -- See https://wiki.hypr.land/Configuring/Basics/Variables/#input
 -- hl.config({
