@@ -65,7 +65,10 @@ PACKAGES_AGE=(age age-plugin-yubikey)   # decrypting the work-repo manifest
 # Tied to work_setup because that is where AWS appears in this repo -- the
 # per-project container homes seed themselves from ~/.aws. Move it to
 # PACKAGES_CORE if a machine needs the CLI without the work environment.
-PACKAGES_WORK=(aws-cli-v2)
+#   bind-tools -- provides dig, which the work SSM setup script checks for
+#                 before it will run. It resolves a hostname to the EC2
+#                 instance behind it, so the whole proxy depends on it.
+PACKAGES_WORK=(aws-cli-v2 bind-tools)
 #   gamescope      -- micro-compositor. Under Hyprland it is close to required:
 #                     it decouples the game's render resolution from the
 #                     desktop's, so a fractionally scaled output (this laptop
@@ -237,6 +240,12 @@ OMASETTINGS_PLUGIN_ID="io.github.twiking.omasettings"
 HYPRMONCFG_PLUGIN_URL="https://github.com/crmne/omarchy-hyprmoncfg.git"
 HYPRMONCFG_PLUGIN_ID="crmne.hyprmoncfg"
 AUR_HYPRMONCFG=(hyprmoncfg)
+
+# SSH over AWS Systems Manager needs the Session Manager plugin, which AWS
+# ships only as a vendor package -- the AUR build is how it reaches Arch.
+# Product name, not an employer name, so it belongs here rather than in the
+# manifest.
+AUR_WORK=(aws-session-manager-plugin)
 
 # Keyboard backlight control from the bar. Bar-widget kind only -- no service,
 # so its QML runs only when the widget is drawn.
@@ -559,6 +568,7 @@ step_aur_packages() {
   local -a want=()
   enabled slack         && want+=("${AUR_SLACK[@]}")
   enabled hyprmoncfg    && want+=("${AUR_HYPRMONCFG[@]}")
+  enabled work_setup    && want+=("${AUR_WORK[@]}")
   # Only when the distro has no repo package -- step_packages already took it
   # from `cachyos` otherwise, and asking the AUR for a second copy would drag
   # in a helper this machine may not have.
@@ -2076,7 +2086,7 @@ step_work_repos() {
 # that file (encrypted in secrets/, plaintext outside this repo), so nothing in
 # this script names an employer, a project or a host.
 WORK_ROOT=""
-declare -a WORK_REPOS=() WORK_TOOLS=() WORK_WORKTREES=() WORK_DEVHOMES=()
+declare -a WORK_REPOS=() WORK_TOOLS=() WORK_WORKTREES=() WORK_DEVHOMES=() WORK_SETUPSCRIPTS=()
 declare -a WORK_SETTINGS=() WORK_IMAGES=() WORK_SERVICES=() WORK_WEBAPPS=()
 WORK_VLIB=""
 WORK_PINFILE="version"   # file in each project naming the shared-lib ref
@@ -2100,6 +2110,11 @@ parse_work_manifest() {
       worktree)  WORK_WORKTREES+=("$b|$c") ;;         # <worktree-dir>|<project pinning it>
       devhome)   WORK_DEVHOMES+=("$b") ;;
       settings)  WORK_SETTINGS+=("$b|$c|$d") ;;       # <project>|<template>|<target>
+      # <project> <script relative to it> [VAR=value ...]
+      # An idempotent setup script the project ships and owns. Everything
+      # specific -- which project, which script, which variables -- stays in
+      # the manifest; bootstrap only knows how to run one.
+      setupscript) WORK_SETUPSCRIPTS+=("$b|$c|${line#*"$b" "$c"}") ;;
       image)     WORK_IMAGES+=("$b|$c") ;;            # <project>|<dev subcommand>
       services)  WORK_SERVICES+=("$b") ;;             # project providing shared services
       # Web app launcher for an internal URL. Takes the rest of the line rather
@@ -2129,6 +2144,52 @@ step_work_setup() {
   [[ -n $manifest ]] || { skip "no work manifest"; return 0; }
   parse_work_manifest "$manifest"
   [[ -n $tmp ]] && rm -f "$tmp"
+
+  # --- project-owned setup scripts ---------------------------------------
+  # Each project ships its own idempotent setup script; this only runs them.
+  # Anything that would name a project, a path or a hostname stays in the
+  # manifest, so bootstrap.sh keeps no work detail of its own.
+  local entry proj rel env_assigns script
+  for entry in "${WORK_SETUPSCRIPTS[@]}"; do
+    IFS='|' read -r proj rel env_assigns <<<"$entry"
+    script="$WORK_ROOT/$proj/$rel"
+    if [[ ! -x "$script" ]]; then
+      skip "${rel##*/} not found or not executable in $proj"
+      continue
+    fi
+    # Expand a leading ~ and any $HOME in each assignment, the way the root
+    # directive does, so the manifest stays portable between machines. Built as
+    # an array and passed to env rather than eval'd: the manifest is trusted,
+    # but nothing here needs a shell to re-parse it.
+    local -a envv=() assign
+    for assign in $env_assigns; do
+      assign="${assign//\$HOME/$HOME}"
+      assign="${assign/=\~\//=$HOME/}"
+      envv+=("$assign")
+    done
+
+    if acting "run ${rel##*/} from $proj"; then
+      # stdin from /dev/null on purpose. A setup script that hits a missing
+      # dependency may stop to ask about installing it, and with a terminal
+      # attached that blocks the whole run forever with no output explaining
+      # why. Closed stdin turns a prompt into an immediate EOF, so the script
+      # either proceeds or fails and says so. Its dependencies are supposed to
+      # be installed earlier in this run anyway -- see AUR_WORK -- and a prompt
+      # means that did not happen, which is worth failing over rather than
+      # waiting on.
+      # Output is captured rather than discarded, and the tail is printed on
+      # failure. Swallowing it meant a script that ran and failed looked the
+      # same as one that never ran, with nothing to go on but "run it by hand".
+      local out rc=0
+      out="$( cd "$WORK_ROOT/$proj" && env "${envv[@]}" "$script" 2>&1 </dev/null )" || rc=$?
+      if (( rc == 0 )); then
+        changed "ran ${rel##*/}"
+      else
+        fail "${rel##*/} failed (exit $rc)"
+        printf '%s\n' "$out" | tail -8 | sed 's/^/      /'
+      fi
+    fi
+  done
 
   # --- web app launchers for internal URLs -------------------------------
   # Deliberately above the clone-root check: a launcher is just a .desktop
