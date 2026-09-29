@@ -312,8 +312,8 @@ live in the `omarchy` stow package under
 - **`davidkhanks.screenshot`** — left-click captures a region, right-click
   fullscreen. Sits in the right section.
 - **`davidkhanks.kblayout`** — click toggles every keyboard between the `us`
-  and `us(intl)` layouts, showing `US` or `INTL`. Sits in the **centre** next
-  to the lock button. It exists because `omarchy.keyboard-layout` could not do
+  and `us(intl)` layouts, showing `US` or `INTL`. Sits in the **left** section,
+  just right of the workspace widget. It exists because `omarchy.keyboard-layout` could not do
   the job on this hardware: that widget must pick *one* keyboard to switch, and
   the Massdrop ALT presents four keyboard devices, of which the furthest-
   advanced (`…-alt-keyboard-1`) is not the one producing keystrokes. This one

@@ -1217,7 +1217,10 @@ step_yubikey_ssh() {
 # position inside it -- ordering needs `omarchy bar move --before/--after`.
 declare -A OWN_PLUGIN_PLACEMENT=(
   [davidkhanks.lock]="center|--section center --before omarchy.indicators"
-  [davidkhanks.kblayout]="center|--section center --after davidkhanks.lock"
+  # Left, after the workspace widget. Note the anchor is the third-party
+  # workspace-name widget, not omarchy.workspaces -- BAR_DISABLED turns the
+  # first-party one off, so anchoring to it would silently no-op.
+  [davidkhanks.kblayout]="left|--section left --after jankeesvw.workspace-name"
 )
 
 # First-party bar widgets deliberately turned off because something else took
