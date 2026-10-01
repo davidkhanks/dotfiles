@@ -46,12 +46,13 @@ fi
 
 # --- aliases -----------------------------------------------------------------
 # After Omarchy's rc on purpose, so these win over its defaults (its own comment
-# above invites exactly that). Omarchy already defines `g=git`.
+# above invites exactly that). Omarchy already provides g, gcm, gcam and gcad.
 #
 # `gs` shadows /usr/bin/gs (ghostscript) in interactive shells only. Scripts and
 # anything invoking ghostscript by PATH lookup are unaffected; to reach the real
-# binary at a prompt, use `\gs` or /usr/bin/gs.
+# binary at a prompt, use `\gs` or /usr/bin/gs. `gl` shadows nothing.
 alias gs='git status'
+alias gl='git log --oneline --decorate'
 
 # --- ble.sh x fzf ------------------------------------------------------------
 # Omarchy's default/bash/init sources fzf's raw completion.bash and
