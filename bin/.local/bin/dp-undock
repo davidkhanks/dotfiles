@@ -1,0 +1,251 @@
+#!/usr/bin/env bash
+#
+# dp-undock -- tear the external DisplayPort output down before physically
+# unplugging it, which appears to prevent the USB-C DisplayPort wedge.
+#
+# WHY. Hot-unplugging a live output leaves a stale pipeline binding behind:
+# once wedged the connector reads enabled=enabled, dpms=On while
+# status=disconnected, and NOTHING in userspace can release it -- not the
+# compositor, not `echo off > .../status`. Only a driver re-init (a warm
+# reboot) clears it, which is why the whole recovery ladder in
+# docs/displayport-wedge.md fails. Tearing the pipeline down first leaves no
+# such binding.
+#
+# EVIDENCE. Two runs, both with hyprmoncfgd stopped, differing only in the
+# teardown:   with -> EDID 256 bytes, 15 modes, working
+#             without -> EDID 0 bytes, 0 modes, WEDGED
+# That is one trial each. This script logs every run so the count can grow.
+#
+# USAGE
+#   dp-undock prepare    # BEFORE unplugging
+#   dp-undock resume     # after unplugging; daemon then auto-handles the replug
+#   dp-undock restore    # AFTER plugging back in; measures and logs a trial
+#   dp-undock status     # trial log so far
+#
+# EVERYDAY USE is prepare -> unplug -> resume -> replug, with no terminal
+# interaction after plugging in. hyprmoncfgd handles hot replug by itself --
+# verified: it rescores the profile from 70 (undocked) to 200 on
+# `monitoradded:DP-1` and re-applies it. Use `restore` instead of `resume`
+# when you want the trial logged, since only it reads EDID on the first probe.
+#
+# Running `restore` without a preceding `prepare` is recorded as a CONTROL
+# trial -- useful, but it will probably wedge and cost a reboot.
+
+set -uo pipefail
+
+DRM=/sys/class/drm
+STATE="${XDG_CACHE_HOME:-$HOME/.cache}/dp-undock.state"
+TRIALS="${DP_UNDOCK_TRIALS:-$HOME/reports/dp-undock-trials.tsv}"
+PROFILE="${DP_UNDOCK_PROFILE:-docked-and-open}"
+DAEMON=hyprmoncfgd.service
+
+die()  { printf '\n  !! %s\n\n' "$*" >&2; exit 1; }
+say()  { printf '  %s\n' "$*"; }
+head_() { printf '\n%s\n' "$*"; }
+
+have() { command -v "$1" >/dev/null 2>&1; }
+
+# The external output: a connected, non-eDP connector on card0.
+find_external() {
+  local c n
+  for c in "$DRM"/card*-*/; do
+    n="$(basename "$c")"
+    case "$n" in *eDP*) continue ;; esac
+    [[ "$(cat "$c/status" 2>/dev/null)" == connected ]] || continue
+    printf '%s\n' "${n#card*-}"
+    return 0
+  done
+  return 1
+}
+
+# How many USB-C partners are physically attached. This is the ONLY reliable
+# way to tell "not plugged back in yet" from "plugged in but wedged": both read
+# status=disconnected with a 0-byte EDID, but a wedge keeps its typec partners
+# (USB keeps working -- that is the defining symptom).
+partner_count() { ls -d /sys/class/typec/port?-partner 2>/dev/null | wc -l; }
+
+# Any non-eDP connector, regardless of status. find_external only returns
+# CONNECTED ones, which is useless while wedged.
+find_external_any() {
+  local c n
+  for c in "$DRM"/card*-*/; do
+    n="$(basename "$c")"
+    case "$n" in *eDP*) continue ;; esac
+    [[ -r "$c/status" ]] || continue
+    printf '%s\n' "${n#card*-}"; return 0
+  done
+  return 1
+}
+
+# Would anything still be on screen if we disabled $1?
+other_output_live() {
+  local c n
+  for c in "$DRM"/card*-*/; do
+    n="${c%/}"; n="$(basename "$n")"
+    [[ "${n#card*-}" == "$1" ]] && continue
+    [[ "$(cat "$c/enabled" 2>/dev/null)" == enabled ]] && return 0
+  done
+  return 1
+}
+
+conn_path() { printf '%s\n' "$DRM"/card*-"$1"; }
+
+read_attr() { cat "$(conn_path "$1")/$2" 2>/dev/null; }
+
+edid_bytes() { wc -c < "$(conn_path "$1")/edid" 2>/dev/null || echo 0; }
+mode_count() { wc -l < "$(conn_path "$1")/modes" 2>/dev/null || echo 0; }
+
+log_trial() {  # mode edid modes verdict connector
+  mkdir -p "$(dirname "$TRIALS")"
+  [[ -s "$TRIALS" ]] || printf 'when\tmode\tconnector\tedid_bytes\tmodes\tverdict\n' > "$TRIALS"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$(date -Is)" "$1" "$5" "$2" "$3" "$4" >> "$TRIALS"
+}
+
+cmd_prepare() {
+  have hyprctl || die "hyprctl not found; this only works under Hyprland."
+
+  local out
+  out="$(find_external)" || die "No connected external output found. Nothing to prepare."
+
+  [[ "$(read_attr "$out" enabled)" == enabled ]] \
+    || die "$out is already disabled. Nothing to do."
+
+  if ! other_output_live "$out"; then
+    die "$out is the only enabled output -- disabling it would leave you with no
+     screen. Open the lid first, or set DP_UNDOCK_FORCE=1 if you know better."
+  fi
+
+  head_ "Preparing $out for unplug"
+
+  if systemctl --user is-active --quiet "$DAEMON"; then
+    systemctl --user stop "$DAEMON" || die "Could not stop $DAEMON."
+    say "stopped $DAEMON (it would re-enable the output behind us)"
+  else
+    say "$DAEMON was already stopped"
+  fi
+
+  hyprctl eval "hl.monitor({ output = \"$out\", disabled = true })" >/dev/null 2>&1
+
+  # VERIFY. hyprctl reports ok for things it silently ignores, and `hyprctl
+  # keyword` does not work at all under the Lua parser -- never trust the exit
+  # code, always confirm the kernel agrees.
+  local i=0
+  while (( i < 12 )); do
+    [[ "$(read_attr "$out" enabled)" == disabled ]] && break
+    sleep 0.5; (( i++ ))
+  done
+
+  if [[ "$(read_attr "$out" enabled)" != disabled ]]; then
+    systemctl --user start "$DAEMON" >/dev/null 2>&1
+    die "Teardown did NOT take -- $out still reads enabled. Daemon restarted;
+     nothing changed. Do not unplug, you would just reproduce the wedge."
+  fi
+
+  printf '%s\t%s\t%s\n' "$out" "$(date -Is)" "$(partner_count)" > "$STATE"
+  say "verified: $out enabled -> disabled (pipeline released)"
+  head_ "Ready. Unplug the hub and charger now, then: dp-undock restore"
+}
+
+cmd_restore() {
+  local out mode="control" when="" want_partners=""
+  if [[ -r "$STATE" ]]; then
+    out="$(cut -f1 "$STATE")"; when="$(cut -f2 "$STATE")"
+    want_partners="$(cut -f3 "$STATE")"; mode="prepared"
+  elif [[ "${2:-}" == --control ]]; then
+    out="$(find_external_any)" || die "No external connector found at all."
+  else
+    # Without this guard, running restore on a healthy display with nothing
+    # unplugged logs a bogus "control passed" trial. A control run is
+    # deliberate, so make saying so deliberate too.
+    die "No prepare recorded. If you really did unplug and replug WITHOUT
+     preparing, say so explicitly:  dp-undock restore --control
+     Otherwise there is nothing to restore and nothing to log."
+  fi
+
+  head_ "Restoring $out"
+  [[ "$mode" == control ]] \
+    && say "no prepare recorded -- logging this as a CONTROL trial" \
+    || say "prepared at $when"
+
+  # Do NOT measure before the hardware is back: an unplugged connector reads
+  # status=disconnected with a 0-byte EDID, identical to a wedge, and would be
+  # logged as a false failure.
+  local now_partners; now_partners="$(partner_count)"
+  if [[ -n "$want_partners" ]] && (( now_partners < want_partners )); then
+    head_ "Hub does not look plugged back in yet"
+    say "USB-C partners: $now_partners now, $want_partners when you prepared."
+    say "Nothing measured and nothing logged. Plug it in, then run restore again."
+    exit 1
+  fi
+  [[ -z "$want_partners" ]] && say "control run: cannot verify the hub is attached"
+
+  # Read the kernel's FIRST probe before anything touches the compositor:
+  # EDID 0 bytes means AUX failed at probe time, which is the wedge.
+  local edid modes verdict
+  edid="$(edid_bytes "$out")"; modes="$(mode_count "$out")"
+  say "first probe: EDID ${edid} bytes, ${modes} modes"
+
+  if (( edid > 0 && modes > 0 )); then verdict=ok; else verdict=wedged; fi
+
+  systemctl --user start "$DAEMON" >/dev/null 2>&1
+  sleep 3
+  if have hyprmoncfg; then
+    hyprmoncfg apply "$PROFILE" --confirm-timeout 0 >/dev/null 2>&1 \
+      && say "reapplied profile '$PROFILE'" \
+      || say "could not apply profile '$PROFILE' -- check: hyprmoncfg profiles"
+  fi
+
+  rm -f "$STATE"
+  log_trial "$mode" "$edid" "$modes" "$verdict" "$out"
+
+  if [[ "$verdict" == ok ]]; then
+    head_ "Looks good -- but confirm the monitor actually shows an image."
+    say "DRM reporting connected is NOT proof of pixels; that has fooled us before."
+  else
+    head_ "WEDGED. EDID did not come back; a reboot is the only known recovery."
+    say "After rebooting: hyprmoncfg apply $PROFILE --confirm-timeout 0"
+  fi
+  cmd_status
+}
+
+# "I will replug later" -- hand control back to the daemon while still
+# unplugged and let its automatic switching pick the monitor up on its own.
+# NOTE: this logs no trial, because the EDID-on-first-probe measurement can
+# only be taken after the hardware is back.
+cmd_resume() {
+  head_ "Handing monitor control back to $DAEMON"
+  systemctl --user start "$DAEMON" >/dev/null 2>&1 || die "Could not start $DAEMON."
+  sleep 3
+  say "daemon: $(systemctl --user is-active "$DAEMON")"
+  # Deliberately NOT applying the docked profile here: the external output is
+  # absent, so the profile has nothing to bind to.
+  rm -f "$STATE"
+  head_ "Plug the hub back in -- the daemon should pick it up by itself."
+  say "If it does not, run:  hyprmoncfg apply $PROFILE --confirm-timeout 0"
+  say "No trial logged; this path cannot measure the first probe."
+}
+
+cmd_status() {
+  head_ "Trials"
+  [[ -s "$TRIALS" ]] || { say "none yet ($TRIALS)"; return 0; }
+  column -t -s $'\t' < "$TRIALS" | sed 's/^/  /'
+  local p pw c cw
+  p=$(awk -F'\t' '$2=="prepared"' "$TRIALS" | wc -l)
+  pw=$(awk -F'\t' '$2=="prepared" && $6=="wedged"' "$TRIALS" | wc -l)
+  c=$(awk -F'\t' '$2=="control"' "$TRIALS" | wc -l)
+  cw=$(awk -F'\t' '$2=="control" && $6=="wedged"' "$TRIALS" | wc -l)
+  printf '\n  prepared: %s run(s), %s wedged\n  control : %s run(s), %s wedged\n\n' \
+    "$p" "$pw" "$c" "$cw"
+}
+
+case "${1:-}" in
+  prepare|pre|down) cmd_prepare ;;
+  restore|post|up)  cmd_restore "$@" ;;
+  resume)           cmd_resume ;;
+  status|log)       cmd_status ;;
+  *) printf 'usage: dp-undock {prepare|restore|resume|status}\n\n'
+     printf '  prepare   before unplugging the hub\n'
+     printf '  restore   after plugging it back in\n'
+     printf '  resume    hand control back to the daemon while still unplugged\n'
+     printf '  status    trial log so far\n'; exit 2 ;;
+esac

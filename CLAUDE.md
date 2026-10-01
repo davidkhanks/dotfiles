@@ -308,6 +308,20 @@ Full detail in `docs/thermals.md` and `docs/yubikey-ssh.md`. The short version:
 - **`age -d` with a YubiKey identity needs a real TTY** for the PIN prompt, so
   it cannot be driven from a non-interactive tool call.
 - **Never `:Lazy sync`/`:Lazy update`** in Neovim — use `:Lazy restore`.
+- **The USB-C DisplayPort wedge was an aquamarine 0.15.0 regression**
+  ([#386](https://github.com/hyprwm/aquamarine/issues/386)), fixed in 0.15.1.
+  Not hardware. **Omarchy's `stable-mirror.omarchy.org` pins a snapshot**, so
+  `pacman -Syu` kept offering the broken 0.15.0-2 for two weeks after Arch
+  shipped the fix — when a package looks stuck at an old version here, check
+  the mirror before assuming Arch has not released it. 0.15.1-1 was installed
+  manually from the official Arch binary; `pacman` will not downgrade it.
+  `docs/displayport-wedge.md` has the full story, including two wrong
+  diagnoses filed upstream before the cause was found.
+- **Hibernate works on panther** and takes ~50-60s to power off. The screen
+  goes dark within ~2s because Omarchy locks before sleep — that is NOT the
+  machine being off, and pressing the power button during the image write
+  aborts it with `Wakeup event detected during hibernation, rolling back`.
+  Wait for the power LED to go dark.
 
 ## Unfinished
 

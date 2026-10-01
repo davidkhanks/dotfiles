@@ -8,25 +8,38 @@
 # reboot has recovered it so far. Upstream: omacom/omarchy#11864 and
 # FrameworkComputer/SoftwareFirmwareIssueTracker.
 #
-# WHAT TO LOOK AT FIRST. The discriminator is the LOCAL port's DisplayPort alt
-# mode, not the partner's:
+# WHAT IS ACTUALLY DIAGNOSTIC. Nothing in the PD/Type-C layer, as far as is
+# known. Only this, which is a restatement of the symptom rather than a cause:
 #
-#     /sys/class/typec/portN/portN.1   svid=ff01   active=yes|no
+#     /sys/class/drm/card0-DP-1/status            connected / disconnected
 #
-# active=yes means the mux entered DP mode and the lanes are carrying video.
-# If that reads "no" while `framework_tool --pdports` still reports HPD High,
-# the PD controller has the link and the kernel never entered DP alt mode --
-# that is the fault.
+# An earlier version claimed port 3 VCONN (from `framework_tool --pdports`)
+# tracked the fault. RETRACTED: that was confounded with cold-boot vs runtime
+# renegotiation. A hibernate resume gives VCONN=On with a working display.
+# VCONN is still captured below, but read it as "who negotiated last", not as
+# a fault indicator.
 #
-# WHAT IS A RED HERRING. These fire constantly on this hardware, in the
-# WORKING state as well as the broken one, and partner alt modes are never
-# registered either way:
+# WHAT IS A RED HERRING. All of the following read identically in the working
+# and broken states, so none of them is the fault:
 #
+#     ucsi_acpi USBC000:00: unknown error 256
 #     ucsi_acpi USBC000:00: GET_CABLE_PROPERTY failed (-5)
-#     ucsi_acpi USBC000:00: conN: failed to register partner alt modes (-5)
+#     ucsi_acpi USBC000:00: con3: failed to register partner alt modes (-5)
+#     framework_tool --pdports -> port 3 "DP Alt Mode: UFP_D Connected, HPD High"
+#     every /sys/class/typec/portN/portN.1  svid=ff01  active=yes
 #
-# Do not read them as the cause without evidence; a baseline taken while the
-# display worked shows all of them present.
+# The sysfs alt-mode "active" flag in particular is worthless here: port0 reads
+# active=yes with no partner plugged in at all. It is set at registration and
+# never updated. An earlier version of this script called it THE discriminator;
+# it is not, and the capture that disproved it is in ~/reports.
+#
+# Two lines DO appear only when wedged, but as symptoms rather than causes:
+#
+#     ucsi_acpi USBC000:00: GET_PDOS failed (-70)          (-ECOMM)
+#     ucsi_acpi USBC000:00: con4: failed to register partner alt modes (-5)
+#
+# UCSI connectors are 1-based, so con4 is port3 -- the hub. con3 is port2, the
+# charger, and its identical error fires in every state.
 #
 # Usage:  dp-state [working|broken|<label>]
 # Writes ~/reports/dp-state-<label>-<timestamp>.txt and prints the summary.
@@ -52,7 +65,7 @@ alt_modes() {
   printf '### dp-state  label=%s  captured=%s\n' "$label" "$(date -Is)"
   printf '### kernel=%s\n\n' "$(uname -r)"
 
-  echo "## DISCRIMINATOR: local DisplayPort alt mode per port"
+  echo "## local DisplayPort alt mode per port (NOT diagnostic -- see header)"
   for p in /sys/class/typec/port?; do
     n="$(basename "$p")"
     for am in "$p"/"$n".*; do
@@ -110,6 +123,13 @@ if command -v pkexec >/dev/null 2>&1; then
     framework_tool --pdports 2>&1 | sed "s/^/  /"
     echo; echo "## retimers"
     framework_tool --versions 2>&1 | grep -A3 -i retimer | sed "s/^/  /"
+    echo; echo "## DP-1 DPCD-derived fields (read over AUX -- SBU pins)"
+    for f in i915_dp_max_link_rate i915_dp_max_lane_count force \
+             i915_dp_link_retrain_disabled i915_psr_status; do
+      printf "  %-32s %s\n" "$f" \
+        "$(cat "/sys/kernel/debug/dri/0/DP-1/$f" 2>&1 | head -1)"
+    done
+
     echo; echo "## ucsi messages this boot"
     dmesg -T 2>/dev/null | grep -i ucsi | tail -20 | sed "s/^/  /"
     echo; echo "## xe / drm messages this boot"
@@ -119,4 +139,19 @@ fi
 
 echo "saved: $out"
 echo
-sed -n '/## DISCRIMINATOR/,/^$/p' "$out"
+
+# The verdict, from the only two fields that track the fault.
+dp1="$(cat /sys/class/drm/card0-DP-1/status 2>/dev/null || echo unknown)"
+vconn="$(awk '/USB-C Port 3:/ { p = 1 } p && /VCONN:/ { print $2; exit }' "$out")"
+: "${vconn:=unknown}"
+
+printf '  card0-DP-1 status : %s\n' "$dp1"
+printf '  port 3 VCONN      : %s\n' "$vconn"
+echo
+case "$dp1" in
+  connected)    echo "  => DRM sees a display. NOT proof of an image: while wedged, link"
+                echo "     training passes at every stage and the monitor still shows nothing." ;;
+  disconnected) echo "  => WEDGED. See docs/displayport-wedge.md for the runbook; reboot is the" 
+                echo "     only recovery proven so far. VCONN above is NOT a fault indicator." ;;
+  *)            echo "  => could not read DP-1 status" ;;
+esac
