@@ -18,6 +18,24 @@ release output on disconnect manually"), merged 15 Sept, shipped in
 **This machine got 0.15.0 on 2026-09-16 at 14:32 -- one day before the fix was
 released** -- which is when the wedges started.
 
+### Confirmed fixed on this machine (2026-09-30)
+
+After rebooting into `libaquamarine.so.0.15.1`, a bare hot unplug/replug --
+**no `dp-undock`, no VT switch** -- came back cleanly. That is the exact case
+that wedged every time on 0.15.0. No orphaned CRTC was left behind either:
+
+```bash
+# nothing should ever print here; a hit is the fault signature
+for c in /sys/class/drm/card0-*/; do
+  [ "$(cat $c/status)" = disconnected ] && [ "$(cat $c/enabled)" = enabled ] \
+    && echo "ORPHAN: $(basename $c)"
+done
+```
+
+**`dp-undock` is now a safety net, not a daily habit.** Keep it for machines
+still on 0.15.0 -- including any other box on Omarchy's pinned mirror -- and
+as the quick check above for whether the bug has returned.
+
 ### Why Omarchy machines stay broken
 
 `stable-mirror.omarchy.org` pins a tested snapshot, so `pacman -Syu` keeps

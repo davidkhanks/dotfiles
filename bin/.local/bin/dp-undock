@@ -22,7 +22,12 @@
 #   dp-undock restore    # AFTER plugging back in; measures and logs a trial
 #   dp-undock status     # trial log so far
 #
-# EVERYDAY USE is prepare -> unplug -> resume -> replug, with no terminal
+# NO LONGER NEEDED ON aquamarine >= 0.15.1 -- the underlying bug
+# (hyprwm/aquamarine#386) is fixed there, confirmed on this machine 2026-09-30
+# by a bare unplug/replug with none of this. Keep it for hosts still pinned to
+# 0.15.0, and as a workaround if the regression ever returns.
+#
+# EVERYDAY USE (on affected versions) is prepare -> unplug -> resume -> replug, with no terminal
 # interaction after plugging in. hyprmoncfgd handles hot replug by itself --
 # verified: it rescores the profile from 70 (undocked) to 200 on
 # `monitoradded:DP-1` and re-applies it. Use `restore` instead of `resume`
