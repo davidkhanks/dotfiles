@@ -44,6 +44,15 @@ if [[ ! -r "${OMARCHY_PATH-}/default/bash/rc" ]] && command -v starship >/dev/nu
   eval "$(starship init bash)"
 fi
 
+# --- aliases -----------------------------------------------------------------
+# After Omarchy's rc on purpose, so these win over its defaults (its own comment
+# above invites exactly that). Omarchy already defines `g=git`.
+#
+# `gs` shadows /usr/bin/gs (ghostscript) in interactive shells only. Scripts and
+# anything invoking ghostscript by PATH lookup are unaffected; to reach the real
+# binary at a prompt, use `\gs` or /usr/bin/gs.
+alias gs='git status'
+
 # --- ble.sh x fzf ------------------------------------------------------------
 # Omarchy's default/bash/init sources fzf's raw completion.bash and
 # key-bindings.bash unconditionally. ble.sh's manual is explicit that fzf
