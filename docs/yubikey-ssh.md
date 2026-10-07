@@ -76,20 +76,101 @@ pcscd. That can mislead you into thinking smartcard access is fine.)
 
 ```
 Host *
-    PKCS11Provider /usr/lib/libykcs11.so
     IdentityFile ~/.ssh/id_yubikey_piv.pub
     IdentitiesOnly yes
 ```
 
-The token exposes **six** keys over PKCS#11 — slot 9A, four
-`age-plugin-yubikey` retired slots, and the attestation key. Offering all six
-hits the default `MaxAuthTries` of 6 on many servers, and the connection fails
-before the right key is tried. `IdentityFile` + `IdentitiesOnly` restricts it to
+There is **deliberately no `PKCS11Provider` line**. The module is loaded into
+`ssh-agent` instead; having both opens two competing PIV sessions on the token,
+the direct load evicts the agent's cached PIN, and signing then fails with
+`agent refused operation`. `IdentitiesOnly` filters agent-provided keys too,
+not just files on disk, so it still restricts the offer to 9A without it.
+
+The token exposes **seven** keys over PKCS#11 — slot 9A, five
+`age-plugin-yubikey` retired slots, and the attestation key. That is one more
+than the default `MaxAuthTries` of 6, so offering all of them can exhaust the
+server's budget before 9A is reached — and the agent, not this end, decides the
+order. The failure reads `Too many authentication failures`, which does not
+look like an ordering problem. `IdentityFile` + `IdentitiesOnly` restricts it to
 9A alone.
 
 **Adding another key later** (work deploy key, second GitHub account, a bastion)
 requires its own `Host` block with an explicit `IdentityFile`. Do not relax the
 global block — that reintroduces the `MaxAuthTries` failure.
+
+## Retired slots: what else is on the token
+
+`age-plugin-yubikey` does not touch 9A. Each identity it creates goes in a PIV
+**retired** slot -- `0x82`-`0x95`, named `RETIRED1`-`RETIRED20` by the standard
+(NIST SP 800-73). "Retired" is the slot's spec name, not a status: they are
+ordinary working slots, and they are the only large pool of spare asymmetric
+slots a PIV card has, which is why `age` borrows them. The mapping is
+arithmetic:
+
+```
+PIV slot = 0x81 + age slot number      # age slot 1 = 0x82, age slot 5 = 0x86
+```
+
+**These are not leftovers to clean up.** Every one is load-bearing, and the
+ones that look unused from inside this repo are the dangerous ones -- slot 86
+decrypts nothing here and holds all of panther's `aegis` profiles. As of
+2026-10-06:
+
+| PIV | age | Name | Tag | Used by |
+|---|---|---|---|---|
+| `82` | 1 | aegis | `gfSSxw` | **this repo** -- both `secrets/*.age`; the slot `secrets/yubikey-identity.txt` resolves to |
+| `83` | 2 | aegis | `q7cBNQ` | unidentified |
+| `84` | 3 | aegis | `F3c6bw` | unidentified |
+| `85` | 4 | work sops | `JsxQ4w` | work secrets manager, outside this repo |
+| `86` | 5 | aegis | `5K2zfw` | `aegis` on **panther** |
+
+Slots 83 and 84 were minted one and five minutes after 82 on 2026-05-12, the
+shape of setting one tool up across machines in a sitting. Likely the `omarchy`
+desktop, the MacBook and the `cachyos` host, in some order -- **unconfirmed**.
+Slot 82 is doubly load-bearing: it is one of those hosts' `aegis` identity *and*
+what this repo decrypts with.
+
+A new host does not need a new slot. The private keys never leave the token, so
+a slot is not a per-machine credential -- any machine holding the YubiKey can
+use any slot. What per-host slots actually produce is fragmentation: profiles
+encrypted on one host cannot be read on another, purely because each
+`~/.aegis/identity.txt` points somewhere different. Pointing a new host at an
+existing slot is the fix; `age-plugin-yubikey` only mints a slot when run bare,
+and `--identity --slot N` prints an existing one without touching the token.
+
+### Identifying a slot
+
+Nothing here needs a PIN. On any host, the stub names its own slot:
+
+```bash
+grep -i recipient ~/.aegis/identity.txt     # match against the table below
+```
+
+The ciphertext is the more trustworthy source -- every age header names its
+recipients by tag:
+
+```bash
+head -c 300 ~/.aegis/profiles/*.age | strings | grep '^-> piv-p256'
+```
+
+The tag is `base64(sha256(recipient_pubkey)[:4])`, so it is derivable offline
+from the public keys alone. `age-plugin-yubikey --list` prints all five.
+
+| age | PIV | Recipient |
+|---|---|---|
+| 1 | `82` | `age1yubikey1qf3t76mhs0nthh9t4cv757tzduz4qc7kryjprhsgysdctzvcnskkgcr08v6` |
+| 2 | `83` | `age1yubikey1qwrul6lpwpm7lucar2jxpktwp97awhvsevceryd5u5kn6eyxwg0a7w77l9q` |
+| 3 | `84` | `age1yubikey1qgqdx3v2tcestcn9rek8sqqnmeznpu600rzgyv68lmkvl7ye67qnvmyr8ee` |
+| 4 | `85` | `age1yubikey1qwcp5pfsl86xgshez4sha3ft3zyeydcdp92fcmedk3x6gp65njedw3gdph7` |
+| 5 | `86` | `age1yubikey1q0fl02vjxj6tj2zt7drt53lwnzqle3mv7qmp30da0up2fm3vj48dzm3c66h` |
+
+### `aegis` has no backup recipient
+
+`secrets/*.age` in this repo always carry a second X25519 stanza -- the offline
+backup key in `secrets/recipients.txt` -- so a lost YubiKey is recoverable.
+`~/.aegis/*.age` carry **one** recipient and stop. A lost or reset token takes
+every `aegis` profile on every host at once, with no recovery path. Deletion is
+not the risk here; the risk is already standing.
 
 ## Touch notifications
 
@@ -157,6 +238,7 @@ ykman info                                   # device, enabled applets
 ykman piv info                               # slot contents
 ssh-keygen -D /usr/lib/libykcs11.so          # keys OpenSSH can see
 ykman fido info                              # FIDO2 PIN attempts remaining
+age-plugin-yubikey --list                    # retired-slot identities + recipients
 curl -sS https://github.com/davidkhanks.keys # is the key registered?
 ```
 
