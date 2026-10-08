@@ -9,11 +9,18 @@ The band appears only when there is something to ship, and says what:
 feat/thing: 2 uncommitted, 1 unpushed  [ Ship ] [ Hide ]
 ```
 
-Pressing **Ship** runs the command. What it does, in order: branch if you are
-on the default branch, commit anything uncommitted, push, open a PR (reusing
-one that already exists for the branch), poll once a minute for up to seven
-minutes for an automated review, address what it raises, then commit and push
-the fixes. It reports what it changed and what it declined.
+Pressing **Ship** runs the command. It always branches (if you are on the
+default branch), commits anything uncommitted and pushes. **How much further it
+goes depends on the host:**
+
+| Origin | What happens |
+|---|---|
+| `bitbucket.org` | opens a PR (reusing an open one for the branch), polls once a minute for up to seven minutes for the automated review, addresses what it raises, commits and pushes the fixes |
+| `github.com` | stops after the push -- no PR |
+| anything else | stops after the push -- no PR |
+
+Stopping after the push is a success, not a partial run: the review workflow is
+Bitbucket-only, and the command says so rather than leaving you wondering.
 
 ## Install
 
@@ -31,8 +38,8 @@ in that session immediately and in every session started afterwards.
 | | |
 |---|---|
 | Claude Code | **2.1.293 or newer** for the button; the `/ship` command alone works on older builds |
-| `gh` | authenticated (`gh auth status`) -- the command opens the PR with it |
 | git | a repo with a remote; the band stays hidden anywhere else |
+| Bitbucket MCP | only for the PR half. `@aashari/mcp-server-atlassian-bitbucket`, with credentials configured. Without it the command still commits and pushes |
 
 **On an older build you get the command and no button, with nothing to say
 why.** If `/ship` works but no band appears, check `claude --version` first.
@@ -47,6 +54,11 @@ before editing, that is a paragraph in `commands/ship.md`.
 
 If no review lands inside seven minutes it says so and leaves the PR open. If
 your CI reviews more slowly than that, raise the loop count in the same file.
+
+Bitbucket is reachable only through MCP tools, never a CLI, so `Monitor` cannot
+query it. It runs as a bare heartbeat and the polling happens on each tick --
+worth knowing before you try to "simplify" that loop into a single shell
+command.
 
 ## Developing it
 
