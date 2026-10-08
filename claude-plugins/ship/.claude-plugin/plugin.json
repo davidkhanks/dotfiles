@@ -1,0 +1,7 @@
+{
+  "name": "ship",
+  "version": "0.1.0",
+  "description": "A /ship command that commits, pushes, opens a PR and addresses the auto-review, and a Ship button above the prompt that runs it",
+  "author": { "name": "davidkhanks" },
+  "types": "./types/index.d.ts"
+}
