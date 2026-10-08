@@ -1,7 +1,9 @@
 {
   "name": "ship",
-  "version": "0.1.0",
-  "description": "A /ship command that commits, pushes, opens a PR and addresses the auto-review, and a Ship button above the prompt that runs it",
-  "author": { "name": "davidkhanks" },
+  "version": "0.2.0",
+  "description": "A /ship command that commits and pushes, and on Bitbucket also opens a PR and addresses its auto-review, with a Ship button above the prompt that runs it",
+  "author": {
+    "name": "davidkhanks"
+  },
   "types": "./types/index.d.ts"
 }
