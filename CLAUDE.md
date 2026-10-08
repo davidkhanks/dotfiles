@@ -26,6 +26,21 @@ ours; folding them would swallow files this repo does not own.
 
 A second run must report `everything already in place; nothing to do`.
 
+**Two standing exceptions, both already true and neither a bug.**
+
+`step_work_setup` runs each manifest setup script **unconditionally** -- being
+idempotent is the project script's contract, not this script's -- and reports
+`changed "ran <script>"` whenever one succeeds. So on a machine with
+`work_setup` enabled and a `setupscript` directive, every run reports at least
+`1 change(s)` even when nothing happened. Do not go looking for what changed.
+
+**A dry run without a TTY cannot decrypt the work manifest**, because `age -d`
+with a YubiKey identity needs a real terminal for the PIN. Both work steps then
+bail early with `✗ could not decrypt`, so a `--dry-run` driven from a tool call
+verifies everything *except* those two steps, and its `nothing to do` is
+narrower than it reads. Only a real run in a terminal exercises them -- an
+agent cannot self-verify this script end to end.
+
 ## Shell traps that have already caused bugs here
 
 **`grep -q` in a pipeline under `set -o pipefail` is a race.** `grep -q` exits

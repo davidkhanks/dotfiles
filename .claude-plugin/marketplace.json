@@ -1,0 +1,13 @@
+{
+  "name": "davidkhanks",
+  "owner": {
+    "name": "davidkhanks"
+  },
+  "plugins": [
+    {
+      "name": "ship",
+      "source": "./claude-plugins/ship"
+    }
+  ],
+  "description": "davidkhanks's Claude Code plugins"
+}

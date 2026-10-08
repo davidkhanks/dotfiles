@@ -225,7 +225,7 @@ SMART_SPLITS_DIR="${SMART_SPLITS_DIR:-$HOME/.local/share/nvim/lazy/smart-splits.
 HERDR_CONFIG="${HERDR_CONFIG:-$HOME/.config/herdr/config.toml}"
 
 BAR_SETTINGS=(
-  'omarchy.clock|format|"dddd h:mm AP"'
+  'omarchy.clock|format|"ddd d MMM h:mm AP"'
   'omarchy.clock|verticalFormat|"h\n—\nmm\nAP"'
 )
 
@@ -233,6 +233,15 @@ BAR_SETTINGS=(
 # fan and battery with live graphs. Same author as the hyprmoncfg plugin.
 OMASTATS_PLUGIN_URL="https://github.com/crmne/omastats.git"
 OMASTATS_PLUGIN_ID="crmne.omastats"
+
+# Claude Code plugins published from this repo. The repo root carries
+# .claude-plugin/marketplace.json, so the repo is itself a marketplace. It is
+# added as a FOLDER rather than by its GitHub URL on purpose: a folder
+# marketplace whose entry is a relative path is read from the working tree, so
+# an edit here reaches a running session through /reload-plugins with no
+# reinstall and no version bump. A git source would install a copy instead.
+CLAUDE_MARKETPLACE="davidkhanks"
+CLAUDE_PLUGINS=(ship)
 
 OMASETTINGS_PLUGIN_URL="https://github.com/twiking/omasettings.git"
 OMASETTINGS_PLUGIN_ID="io.github.twiking.omasettings"
@@ -298,7 +307,7 @@ HOST_FILES=(
 # different things (no fan control on a laptop, for instance), and neither
 # should have to re-answer the prompts on every run.
 BOOTSTRAP_CONF="${BOOTSTRAP_CONF:-$DOTFILES_DIR/bootstrap.conf}"
-MODULE_KEYS=(yubikey coolercontrol slack brave webapps airpods hyprmoncfg omasettings omastats keyboard_brightness storage_analyzer blesh gaming tailscale smb_shares rdp ssh_server herdr_nav work_repos work_setup nvim_default nvim_sync)
+MODULE_KEYS=(yubikey coolercontrol slack brave webapps airpods hyprmoncfg omasettings omastats keyboard_brightness storage_analyzer claude_plugins blesh gaming tailscale smb_shares rdp ssh_server herdr_nav work_repos work_setup nvim_default nvim_sync)
 declare -A MODULE_ENABLED=()
 
 module_desc() {
@@ -314,6 +323,7 @@ module_desc() {
     omastats)      echo "System monitor bar widget (third-party plugin)" ;;
     keyboard_brightness) echo "Keyboard backlight control in the bar (third-party plugin)" ;;
     storage_analyzer)    echo "Disk usage bar widget with a Space Hogs panel (third-party plugin)" ;;
+    claude_plugins) echo "Claude Code plugins from this repo (/ship and its bar button)" ;;
     blesh)         echo "ble.sh: fish-style autosuggestions for bash" ;;
     gaming)        echo "Steam, gamescope and the MangoHud overlay" ;;
     tailscale)     echo "Tailscale mesh VPN (daemon, Taildrop, bar widget, admin web app)" ;;
@@ -1846,6 +1856,51 @@ step_omastats() {
   note "A newly added plugin needs 'omarchy restart shell' before it renders."
 }
 
+step_claude_plugins() {
+  enabled claude_plugins || return 0
+  section "Claude Code plugins"
+
+  # Installed through mise, so a non-interactive `ssh host ./bootstrap.sh` may
+  # not have it on PATH even where it is installed. Skipping is correct; the
+  # plugins are files in this repo either way.
+  if ! have claude; then
+    skip "claude not on PATH -- run this from a login shell to install the plugins"
+    return 0
+  fi
+
+  # Captured, not piped into grep: `grep -q` in a pipeline under pipefail is a
+  # SIGPIPE race, and that has already caused a false module check here.
+  local markets; markets="$(claude plugin marketplace list 2>/dev/null || true)"
+  if [[ "$markets" == *"Folder ($DOTFILES_DIR)"* ]]; then
+    ok "marketplace $CLAUDE_MARKETPLACE reads from this repo"
+  elif acting "claude plugin marketplace add $DOTFILES_DIR"; then
+    if claude plugin marketplace add "$DOTFILES_DIR" >/dev/null 2>&1; then
+      changed "added $DOTFILES_DIR as the $CLAUDE_MARKETPLACE marketplace"
+    else
+      fail "could not add $DOTFILES_DIR as a marketplace"
+      return 0
+    fi
+  fi
+
+  local installed; installed="$(claude plugin list 2>/dev/null || true)"
+  local plugin
+  for plugin in "${CLAUDE_PLUGINS[@]}"; do
+    if [[ "$installed" == *"$plugin@$CLAUDE_MARKETPLACE"* ]]; then
+      ok "$plugin installed"
+    elif acting "claude plugin install $plugin@$CLAUDE_MARKETPLACE"; then
+      if claude plugin install "$plugin@$CLAUDE_MARKETPLACE" >/dev/null 2>&1; then
+        changed "installed $plugin"
+      else
+        fail "could not install $plugin@$CLAUDE_MARKETPLACE"
+      fi
+    fi
+  done
+
+  note "A plugin added mid-session needs '/reload-plugins'. The Ship button
+     needs Claude Code 2.1.293 or newer -- an older build gets /ship and no
+     band, with nothing on screen to say why."
+}
+
 step_omasettings() {
   enabled omasettings || return 0
   section "Settings GUI"
@@ -2408,6 +2463,7 @@ main() {
   step_omastats
   step_keyboard_brightness
   step_storage_analyzer
+  step_claude_plugins
   step_tailscale
   step_smb_shares
   step_nautilus_bookmarks

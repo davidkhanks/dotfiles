@@ -28,13 +28,15 @@ If there are uncommitted changes, stage and commit them in a single commit.
 Write a real message: what changed and why, not a restatement of the diff. If
 the tree is already clean, skip -- the work may already be committed.
 
-This command deliberately overrides the "the user commits" rule in CLAUDE.md.
-That is the whole point of invoking it.
+This command commits on your behalf. Where a project's conventions say an
+agent should not commit unprompted, invoking this command *is* the deliberate
+exception -- that is the whole point of it.
 
 ### 3. Push
 
-`git push -u origin <branch>`. Warn the user before pushing so they can be ready
-for the YubiKey touch.
+`git push -u origin <branch>`. Say so before pushing: a push may need a
+hardware-key touch, a passphrase or an SSO re-auth, and the user should not
+have to notice a silent prompt.
 
 ### 4. Open the PR
 
@@ -84,7 +86,7 @@ actual code before acting on it.
 ### 7. Commit and push the fixes
 
 Only if step 6 changed something. One commit, message naming what the review
-caught. Warn before pushing again (YubiKey touch).
+caught. Announce this push too, for the same reason as the first.
 
 ### 8. Report
 
