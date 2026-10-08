@@ -1,0 +1,7 @@
+{
+  "name": "davidkhanks",
+  "owner": { "name": "davidkhanks" },
+  "plugins": [
+    { "name": "ship", "source": "./ship" }
+  ]
+}
