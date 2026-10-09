@@ -7,6 +7,14 @@
     {
       "name": "ship",
       "source": "./claude-plugins/ship"
+    },
+    {
+      "name": "tickets",
+      "source": "./claude-plugins/tickets"
+    },
+    {
+      "name": "prs",
+      "source": "./claude-plugins/prs"
     }
   ],
   "description": "davidkhanks's Claude Code plugins"

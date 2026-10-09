@@ -241,7 +241,7 @@ OMASTATS_PLUGIN_ID="crmne.omastats"
 # an edit here reaches a running session through /reload-plugins with no
 # reinstall and no version bump. A git source would install a copy instead.
 CLAUDE_MARKETPLACE="davidkhanks"
-CLAUDE_PLUGINS=(ship)
+CLAUDE_PLUGINS=(ship tickets prs)
 
 OMASETTINGS_PLUGIN_URL="https://github.com/twiking/omasettings.git"
 OMASETTINGS_PLUGIN_ID="io.github.twiking.omasettings"
@@ -323,7 +323,7 @@ module_desc() {
     omastats)      echo "System monitor bar widget (third-party plugin)" ;;
     keyboard_brightness) echo "Keyboard backlight control in the bar (third-party plugin)" ;;
     storage_analyzer)    echo "Disk usage bar widget with a Space Hogs panel (third-party plugin)" ;;
-    claude_plugins) echo "Claude Code plugins from this repo (/ship and its bar button)" ;;
+    claude_plugins) echo "Claude Code plugins from this repo (/ship and its bar button, /tickets, /prs)" ;;
     blesh)         echo "ble.sh: fish-style autosuggestions for bash" ;;
     gaming)        echo "Steam, gamescope and the MangoHud overlay" ;;
     tailscale)     echo "Tailscale mesh VPN (daemon, Taildrop, bar widget, admin web app)" ;;
