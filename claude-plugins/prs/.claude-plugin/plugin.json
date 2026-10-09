@@ -1,0 +1,9 @@
+{
+  "name": "prs",
+  "version": "0.2.0",
+  "description": "A /prs pane listing this repo's Bitbucket or GitHub pull requests: filter open, draft or merged, expand one for its description, and have Claude check it out, address its open review comments, approve or merge it",
+  "author": {
+    "name": "davidkhanks"
+  },
+  "types": "./types/index.d.ts"
+}

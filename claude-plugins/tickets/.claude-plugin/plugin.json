@@ -1,0 +1,9 @@
+{
+  "name": "tickets",
+  "version": "0.1.0",
+  "description": "A /tickets pane listing your assigned Linear tickets: expand one for details, then start working on it here or hand it to the Claude column",
+  "author": {
+    "name": "davidkhanks"
+  },
+  "types": "./types/index.d.ts"
+}
