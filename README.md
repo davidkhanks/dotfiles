@@ -53,6 +53,7 @@ own without re-answering every run.
 | `work_setup` | dev environment: `aws-cli-v2`, local tools, worktrees, container homes, images |
 | `nvim_default` | symlink `~/.config/nvim` at this config |
 | `nvim_sync` | `:Lazy restore` on every run (off by default — slow) |
+| `antivirus` | ClamAV for SOC 2 evidence: daily signature updates, and a `~/Downloads` scan Tuesdays 09:00 that skips itself on battery. Read by `compliance-check` (off by default) |
 
 Turning a module off removes its packages, services, kernel modules and host
 files from the run entirely — a laptop with `coolercontrol=no` never installs

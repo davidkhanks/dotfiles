@@ -1,0 +1,17 @@
+[Unit]
+Description=ClamAV scan of ~/Downloads
+Documentation=man:clamscan(1)
+# Never on battery. If the timer fires while unplugged the run is skipped, not
+# deferred: the next attempt is the following Tuesday. compliance-check warns
+# when the last clean scan is more than two weeks old, which is how a run of
+# unplugged Tuesdays gets noticed.
+ConditionACPower=true
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/clamscan-downloads
+# Loading the signatures takes a core and ~1 GB for the length of the scan.
+# Idle scheduling means it only gets CPU and disk nobody else wants.
+Nice=19
+CPUSchedulingPolicy=idle
+IOSchedulingClass=idle

@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+#
+# clamscan-downloads -- weekly ClamAV scan of where outside files land.
+#
+# Scoped on purpose. Mail is Gmail in the browser, so attachments are scanned by
+# Google before they arrive and only ever reach this disk as a download. The rest
+# of $HOME is code, git history and caches, where signature AV finds nothing
+# but costs an hour of CPU. So: ~/Downloads, unless directories are given.
+#
+# Run by clamscan-downloads.timer through clamscan-downloads.service, which is
+# where the AC-power condition and idle CPU/IO priority live -- run by hand,
+# this scans regardless of power.
+#
+# Never deletes or moves anything. A detection raises a critical desktop
+# notification and is left for a human to judge (PUA detection, the usual
+# source of false positives, is off by default in clamscan and stays off).
+#
+# Writes:
+#   ~/.local/state/clamav/scan.log   every run's clamscan output, appended
+#   ~/.local/state/clamav/last-scan  key=value summary, read by compliance-check
+#
+# Exit: 0 clean, 1 something found, 2 scan error -- clamscan's own codes, so a
+# detection shows as a failed unit in `systemctl --user --failed`.
+
+set -uo pipefail
+
+state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/clamav"
+mkdir -p "$state_dir"
+log="$state_dir/scan.log"
+status="$state_dir/last-scan"
+
+dirs=("$@")
+((${#dirs[@]})) || dirs=("$HOME/Downloads")
+
+notify() { # urgency summary body
+  command -v notify-send >/dev/null && notify-send -u "$1" -a ClamAV "$2" "$3"
+}
+
+write_status() { # result detail
+  {
+    printf 'time=%s\n' "$(date -Is)"
+    printf 'result=%s\n' "$1"
+    printf 'dirs=%s\n' "${dirs[*]}"
+    printf 'detail=%s\n' "$2"
+  } >"$status"
+}
+
+# freshclam has to have run once before there is anything to scan with.
+shopt -s nullglob
+db=${CLAMAV_DB_DIR:-/var/lib/clamav}
+# A real glob: brace expansion makes literal names that nullglob never drops.
+sigs=("$db"/daily.c[vl]d)
+shopt -u nullglob
+if ((${#sigs[@]} == 0)); then
+  write_status error "no signature database in $db"
+  notify critical "ClamAV scan skipped" "No virus signatures yet. Run: sudo systemctl start clamav-freshclam-once.service"
+  exit 2
+fi
+
+existing=()
+for d in "${dirs[@]}"; do
+  [[ -d $d ]] && existing+=("$d")
+done
+if ((${#existing[@]} == 0)); then
+  write_status clean "nothing to scan (${dirs[*]} absent)"
+  exit 0
+fi
+
+out=$(mktemp)
+trap 'rm -f "$out"' EXIT
+{
+  printf '\n===== %s  %s\n' "$(date -Is)" "${existing[*]}"
+} >>"$log"
+
+clamscan --recursive --infected --stdout "${existing[@]}" >"$out" 2>&1
+rc=$?
+cat "$out" >>"$log"
+
+files=$(sed -n 's/^Scanned files: //p' "$out")
+found=$(sed -n 's/: \(.*\) FOUND$/: \1/p' "$out")
+
+case $rc in
+  0)
+    write_status clean "${files:-0} files scanned, nothing found"
+    ;;
+  1)
+    write_status infected "$(paste -sd ';' <<<"$found")"
+    notify critical "ClamAV found something in ${existing[*]}" "$found
+
+Nothing was moved or deleted. Details: $log"
+    ;;
+  *)
+    write_status error "clamscan exited $rc; see $log"
+    notify normal "ClamAV scan failed" "clamscan exited $rc. Details: $log"
+    ;;
+esac
+exit "$rc"

@@ -39,7 +39,7 @@ DOTFILES_REPO="${DOTFILES_REPO:-https://github.com/davidkhanks/dotfiles.git}"
 DOTFILES_DIR="${DOTFILES_DIR:-$HOME/dotfiles}"
 
 # Stow packages, in the order they should be applied.
-STOW_PACKAGES=(bash bin fish foot hypr nvim omarchy slack ssh starship tmux)
+STOW_PACKAGES=(bash bin clamav fish foot hypr nvim omarchy slack ssh starship tmux)
 
 # Pacman packages this setup depends on.
 #   stow             -- symlink farm manager for the dotfiles
@@ -89,6 +89,8 @@ PACKAGES_TAILSCALE=(tailscale)
 #   cifs-utils -- mount.cifs, for SMB shares on other tailnet machines
 #   keyutils   -- kernel keyring, used by cifs for credential caching
 PACKAGES_SMB=(cifs-utils keyutils)
+#   clamav -- signature AV for a weekly ~/Downloads scan; SOC 2 evidence
+PACKAGES_ANTIVIRUS=(clamav)
 #   remmina   -- GUI remote desktop client (the Linux answer to the Windows App)
 #   freerdp   -- an OPTIONAL dep of remmina, and the RDP plugin. Installing
 #                remmina alone gives a remote desktop client that cannot speak
@@ -229,6 +231,21 @@ BAR_SETTINGS=(
   'omarchy.clock|verticalFormat|"h\n—\nmm\nAP"'
 )
 
+# Idle timeouts, in seconds. SOC 2 endpoint policy requires the screen to lock
+# after at most 15 minutes idle, and on Linux that cannot be shown by a
+# compliance agent -- `compliance-check` is the evidence instead.
+#
+# Omarchy 4 runs idle and lock inside its shell, not hypridle, and reads them
+# from the "idle" object in shell.json -- the same untracked file as the bar
+# settings above, for the same reason. These are CEILINGS, not values: a
+# shorter timeout set in OmaSettings is left alone, and only one above the
+# ceiling is pulled down. The screensaver ceiling keeps it starting before the
+# lock, as Omarchy's own defaults do.
+IDLE_CEILINGS=(
+  'screensaver|600'
+  'lock|900'
+)
+
 # A system monitor for the bar: CPU, GPU, memory, disk, network, temperature,
 # fan and battery with live graphs. Same author as the hyprmoncfg plugin.
 OMASTATS_PLUGIN_URL="https://github.com/crmne/omastats.git"
@@ -307,7 +324,7 @@ HOST_FILES=(
 # different things (no fan control on a laptop, for instance), and neither
 # should have to re-answer the prompts on every run.
 BOOTSTRAP_CONF="${BOOTSTRAP_CONF:-$DOTFILES_DIR/bootstrap.conf}"
-MODULE_KEYS=(yubikey coolercontrol slack brave webapps airpods hyprmoncfg omasettings omastats keyboard_brightness storage_analyzer claude_plugins blesh gaming tailscale smb_shares rdp ssh_server herdr_nav work_repos work_setup nvim_default nvim_sync)
+MODULE_KEYS=(yubikey coolercontrol slack brave webapps airpods hyprmoncfg omasettings omastats keyboard_brightness storage_analyzer claude_plugins blesh gaming tailscale smb_shares rdp ssh_server herdr_nav work_repos work_setup nvim_default nvim_sync antivirus)
 declare -A MODULE_ENABLED=()
 
 module_desc() {
@@ -335,6 +352,7 @@ module_desc() {
     work_setup)    echo "Prepare the work dev environment (tools, worktrees, containers)" ;;
     nvim_default)  echo "Make this Neovim config the default (~/.config/nvim)" ;;
     nvim_sync)     echo "Restore Neovim plugins from lazy-lock.json (slow)" ;;
+    antivirus)     echo "ClamAV: daily signature updates, weekly ~/Downloads scan on AC power" ;;
     *)             echo "$1" ;;
   esac
 }
@@ -342,7 +360,9 @@ module_desc() {
 # it defaults off.
 # smb_shares defaults off: it is useless without a machine-local credentials
 # file that this repo deliberately does not carry.
-module_default() { case "$1" in nvim_sync|gaming|smb_shares|ssh_server) echo no ;; *) echo yes ;; esac; }
+# antivirus defaults off: it exists for a compliance requirement, not because
+# signature AV protects a Linux desktop much, so a machine opts in.
+module_default() { case "$1" in nvim_sync|gaming|smb_shares|ssh_server|antivirus) echo no ;; *) echo yes ;; esac; }
 
 enabled() { [[ "${MODULE_ENABLED[$1]:-no}" == yes ]]; }
 
@@ -536,6 +556,7 @@ step_packages() {
   enabled gaming     && want+=("${PACKAGES_GAMING[@]}")
   enabled tailscale  && want+=("${PACKAGES_TAILSCALE[@]}")
   enabled smb_shares && want+=("${PACKAGES_SMB[@]}")
+  enabled antivirus  && want+=("${PACKAGES_ANTIVIRUS[@]}")
   enabled rdp        && want+=("${PACKAGES_RDP[@]}")
   enabled work_setup && want+=("${PACKAGES_WORK[@]}")
   # Prefer the repo package where the distro has one (CachyOS); otherwise this
@@ -670,6 +691,7 @@ step_stow() {
     # A couple of packages only make sense when their module is enabled.
     case "$pkg" in
       slack) enabled slack || { skip "$pkg (module off)"; continue; } ;;
+      clamav) enabled antivirus || { skip "$pkg (module off)"; continue; } ;;
       # Hyprland config and Omarchy branding/hooks have nothing to attach to on
       # a non-Omarchy box that shares this repo (the CachyOS gaming machine).
       # Auto-detected rather than made a module so existing bootstrap.conf
@@ -821,6 +843,8 @@ step_services() {
   enabled coolercontrol && units+=(coolercontrold.service)
   enabled tailscale     && units+=(tailscaled.service)
   enabled ssh_server    && units+=(sshd.service)
+  # Arch's daily one-shot updater, not the always-running freshclam daemon.
+  enabled antivirus     && units+=(clamav-freshclam-once.timer)
   if (( ${#units[@]} == 0 )); then
     skip "no services selected"
     return 0
@@ -1783,6 +1807,82 @@ step_bar_settings() {
   done
 }
 
+step_idle_lock() {
+  section "Idle screen lock"
+
+  if ! have omarchy; then
+    skip "omarchy not available"
+    return 0
+  fi
+  if ! have jq; then
+    skip "jq not installed"
+    return 0
+  fi
+
+  local shell_json="$HOME/.config/omarchy/shell.json"
+  if [[ ! -r "$shell_json" ]]; then
+    skip "no shell.json yet (run the shell once first)"
+    return 0
+  fi
+
+  local spec key ceiling current tmp
+  for spec in "${IDLE_CEILINGS[@]}"; do
+    IFS='|' read -r key ceiling <<<"$spec"
+
+    # Absent means the shell's built-in default, which is not known from here,
+    # so it is treated as over the ceiling and written explicitly.
+    current="$(jq -r --arg key "$key" '.idle[$key] // empty' "$shell_json" 2>/dev/null)"
+    if [[ "$current" =~ ^[0-9]+$ ]] && (( current <= ceiling )); then
+      ok "$key after $((current / 60)) min (max $((ceiling / 60)))"
+      continue
+    fi
+
+    if acting "set $key to $((ceiling / 60)) min (was ${current:-unset})"; then
+      # Same jq edit OmaSettings makes. Written beside the original and renamed
+      # over it, keeping its mode (600), so the shell never reads half a file.
+      tmp="$(mktemp "$shell_json.XXXXXX")"
+      if jq --arg key "$key" --argjson s "$ceiling" '.idle = ((.idle // {}) | .[$key] = $s)' \
+          "$shell_json" >"$tmp" && chmod --reference="$shell_json" "$tmp" \
+          && mv -f "$tmp" "$shell_json"; then
+        changed "$key set to $((ceiling / 60)) min"
+      else
+        rm -f "$tmp"
+        fail "could not set idle $key"
+      fi
+    fi
+  done
+}
+
+step_antivirus() {
+  enabled antivirus || return 0
+  section "Antivirus (ClamAV)"
+  have clamscan || { skip "clamav not installed yet (dry-run?)"; return 0; }
+
+  # The daily timer (enabled in step_services) has no previous run to catch up
+  # on, so a fresh install would have no signatures until the next midnight and
+  # the first scan would have nothing to scan with. Fetch them once now.
+  local sigs=(/var/lib/clamav/daily.cvd /var/lib/clamav/daily.cld)
+  if [[ -e ${sigs[0]} || -e ${sigs[1]} ]]; then
+    ok "virus signatures present"
+  elif acting "download virus signatures (~300 MB)"; then
+    sudo systemctl start clamav-freshclam-once.service && changed "virus signatures downloaded" \
+      || fail "freshclam failed; see journalctl -u clamav-freshclam-once"
+  fi
+
+  # The scan itself is a user timer from the stowed clamav package: Tuesday
+  # 09:00, and the service skips the run entirely when on battery.
+  local timer=clamscan-downloads.timer
+  if [[ ! -e "$HOME/.config/systemd/user/$timer" ]]; then
+    skip "$timer missing (stow the clamav package first)"
+  elif [[ "$(systemctl --user is-enabled "$timer" 2>/dev/null)" == "enabled" ]]; then
+    ok "$timer enabled (Tuesday 09:00, on AC only)"
+  elif acting "enable $timer"; then
+    systemctl --user daemon-reload
+    systemctl --user enable --now "$timer" && changed "$timer enabled" \
+      || fail "could not enable $timer"
+  fi
+}
+
 step_webapps() {
   enabled webapps || return 0
   section "Web apps"
@@ -2456,6 +2556,8 @@ main() {
   step_own_plugins
   step_bar_disabled
   step_bar_settings
+  step_idle_lock
+  step_antivirus
   step_primary_paste
   step_airpods
   step_hyprmoncfg

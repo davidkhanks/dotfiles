@@ -1,0 +1,382 @@
+#!/usr/bin/env bash
+#
+# compliance-check -- show that this machine meets the usual SOC 2 endpoint
+# controls, as evidence for a compliance platform that cannot monitor it.
+#
+# Vanta's device agent supports only Debian and Ubuntu, and even there it can
+# detect nothing on Linux except disk encryption. Screen lock, password manager
+# and antivirus have to be evidenced by hand, and a screenshot is the accepted
+# form. This script reads each control from the live system rather than from
+# config files, so what it prints is what is actually in force.
+#
+# Runs on Omarchy and on KDE Plasma (CachyOS and similar); the screen lock is
+# the only check that differs between them.
+#
+#   Omarchy: NOT hypridle. Omarchy 4 runs idle and lock inside its Quickshell
+#   shell, so the authoritative source is the running shell, via
+#   `omarchy-shell idle status`. The setting lives in ~/.config/omarchy/
+#   shell.json under "idle", and OmaSettings writes it.
+#
+#   KDE: kscreenlocker reads [Daemon] in kscreenlockerrc -- the user's file
+#   over /etc/xdg's, over the compiled-in defaults. Parsed directly so the
+#   script needs no KDE tools. Timeout is in MINUTES and may be fractional.
+#   Fix a failure in System Settings > Screen Locking.
+#
+# Antivirus has no Linux equivalent that Vanta checks, so it is reported as a
+# WARN with what the machine does have (firewall), never as a PASS. Whether that
+# is acceptable is a policy call, not this script's.
+#
+# Usage:  compliance-check [--screenshot] [--max-lock SECONDS]
+#   --screenshot   also capture this terminal window to a PNG once printed
+#                  (grim on Hyprland, Spectacle on KDE)
+#   --max-lock     longest acceptable idle-lock timeout (default 900 = 15 min)
+# Writes ~/reports/compliance-<host>-<timestamp>.txt (and .png).
+# Exits non-zero if any control FAILs.
+
+set -uo pipefail
+
+screenshot=false
+max_lock=900
+while (($#)); do
+  case $1 in
+    --screenshot) screenshot=true ;;
+    --max-lock) max_lock=${2:?--max-lock needs seconds}; shift ;;
+    -h | --help) sed -n '2,/^$/s/^# \{0,1\}//p' "$0"; exit 0 ;;
+    *) echo "unknown argument: $1" >&2; exit 2 ;;
+  esac
+  shift
+done
+
+host=$(hostnamectl hostname 2>/dev/null || hostname)
+stamp=$(date +%Y%m%d-%H%M%S)
+out_dir="$HOME/reports"
+mkdir -p "$out_dir"
+out="$out_dir/compliance-$host-$stamp"
+
+fails=0
+if [[ -t 1 ]]; then
+  G=$'\e[1;32m' R=$'\e[1;31m' Y=$'\e[1;33m' B=$'\e[1m' D=$'\e[2m' N=$'\e[0m'
+else
+  G= R= Y= B= D= N=
+fi
+
+pass() { printf '  %sPASS%s  %s\n' "$G" "$N" "$1"; }
+fail() { printf '  %sFAIL%s  %s\n' "$R" "$N" "$1"; ((fails++)); }
+warn() { printf '  %sWARN%s  %s\n' "$Y" "$N" "$1"; }
+info() { printf '        %s%s%s\n' "$D" "$1" "$N"; }
+section() { printf '\n%s%s%s\n' "$B" "$1" "$N"; }
+
+human() { # seconds -> "25 min" / "7 min 30 s" / "45 s"
+  local s=$1
+  if ((s < 60)); then echo "$s s"
+  elif ((s % 60 == 0)); then echo "$((s / 60)) min"
+  else echo "$((s / 60)) min $((s % 60)) s"; fi
+}
+
+days_since() { # epoch seconds -> whole days ago
+  echo $((($(date +%s) - $1) / 86400))
+}
+
+# ClamAV as set up by the bootstrap `antivirus` module: daily signature updates
+# from Arch's freshclam-once timer, and a weekly scan of ~/Downloads from the
+# clamscan-downloads user timer, which skips itself on battery. The scan leaves
+# a key=value summary that this reads.
+av_checks() {
+  local db=${CLAMAV_DB_DIR:-/var/lib/clamav} sig age
+  pass "ClamAV installed ($(clamscan --version 2>/dev/null | cut -d/ -f1))"
+
+  sig=$(ls -t "$db"/daily.c[vl]d 2>/dev/null | head -n 1)
+  if [[ -z $sig ]]; then
+    fail "no virus signatures in $db (freshclam has never run)"
+  else
+    age=$(days_since "$(stat -c %Y "$sig")")
+    if ((age <= 3)); then
+      pass "signatures updated $age day(s) ago"
+    else
+      fail "signatures are $age days old (clamav-freshclam-once.timer not running?)"
+    fi
+  fi
+  # Either Arch's daily one-shot timer or the always-running freshclam daemon.
+  if [[ $(systemctl is-enabled clamav-freshclam-once.timer 2>/dev/null) == enabled ]]; then
+    info "signature updates: clamav-freshclam-once.timer, daily"
+  elif [[ $(systemctl is-active clamav-freshclam.service 2>/dev/null) == active ]]; then
+    info "signature updates: clamav-freshclam.service (daemon)"
+  else
+    fail "nothing keeps signatures updated (enable clamav-freshclam-once.timer)"
+  fi
+
+  # The weekly timer comes from this repo's `antivirus` bootstrap module; on a
+  # machine set up some other way, real-time scanning counts instead.
+  local timer=clamscan-downloads.timer next
+  if [[ $(systemctl --user is-enabled "$timer" 2>/dev/null) == enabled ]]; then
+    next=$(systemctl --user show "$timer" -p NextElapseUSecRealtime --value 2>/dev/null)
+    pass "weekly scan scheduled (Tuesday 09:00, on AC power only)"
+    [[ -n $next ]] && info "next run: $next"
+  elif [[ $(systemctl is-active clamav-clamonacc.service 2>/dev/null) == active ]]; then
+    pass "real-time scanning active (clamav-clamonacc.service)"
+  else
+    warn "ClamAV is installed but nothing runs a scan on a schedule"
+  fi
+
+  local status=${XDG_STATE_HOME:-$HOME/.local/state}/clamav/last-scan
+  if [[ ! -r $status ]]; then
+    [[ -e $HOME/.config/systemd/user/$timer ]] && warn "no scan has run yet"
+    return
+  fi
+  local when result detail dirs
+  when=$(sed -n 's/^time=//p' "$status")
+  result=$(sed -n 's/^result=//p' "$status")
+  detail=$(sed -n 's/^detail=//p' "$status")
+  dirs=$(sed -n 's/^dirs=//p' "$status")
+  age=$(days_since "$(date -d "$when" +%s)")
+  case $result in
+    clean) pass "last scan clean, $age day(s) ago" ;;
+    infected) fail "last scan FOUND something, $age day(s) ago" ;;
+    *) fail "last scan failed, $age day(s) ago" ;;
+  esac
+  info "$when  ${dirs/#$HOME/\~}  $detail"
+  # A Tuesday on battery is skipped, not retried; two in a row is worth a look.
+  ((age <= 14)) || warn "no scan in $age days -- the machine has been on battery every Tuesday"
+}
+
+# ini_get <section> <key> <file>... -- last file that sets the key wins, the
+# way KDE layers /etc/xdg under ~/.config. Prints nothing if no file sets it.
+ini_get() {
+  local section=$1 key=$2 f val last=""
+  shift 2
+  for f in "$@"; do
+    [[ -r $f ]] || continue
+    val=$(awk -v sec="[$section]" -v key="$key" '
+      /^[[:space:]]*\[/ { insec = ($0 == sec); next }
+      insec && index($0, key "=") == 1 { v = substr($0, length(key) + 2) }
+      END { if (v != "") print v }' "$f")
+    [[ -n $val ]] && last=$val
+  done
+  printf '%s' "$last"
+}
+
+lock_omarchy() {
+  local idle enabled awake lock_s pam
+  if idle=$(omarchy-shell idle status 2>/dev/null) && [[ -n $idle ]]; then
+    enabled=$(jq -r .enabled <<<"$idle")
+    awake=$(jq -r .stayAwake <<<"$idle")
+    lock_s=$(jq -r .lock <<<"$idle")
+    if [[ $enabled != true ]]; then
+      fail "idle locking is disabled"
+    elif [[ $awake == true ]]; then
+      fail "stay-awake is on, so the idle lock will never fire"
+    elif ((lock_s > max_lock)); then
+      fail "locks after $(human "$lock_s") idle (policy: $(human "$max_lock") or less)"
+    else
+      pass "locks after $(human "$lock_s") idle (policy: $(human "$max_lock") or less)"
+    fi
+    info "screensaver at $(human "$(jq -r .screensaver <<<"$idle")"), lock at $(human "$lock_s")"
+  else
+    fail "could not read idle status from omarchy-shell"
+  fi
+  pam=$(omarchy-shell lock status 2>/dev/null | jq -r '.passwordPam // empty')
+  if [[ $pam == true ]]; then
+    pass "unlocking requires the account password (PAM)"
+  else
+    fail "lock screen is not using password authentication"
+  fi
+  if [[ $(systemctl --user is-active omarchy-sleep-lock.service 2>/dev/null) == active ]]; then
+    pass "screen locks before suspend (omarchy-sleep-lock.service active)"
+  else
+    fail "omarchy-sleep-lock.service is not running; suspend will not lock"
+  fi
+}
+
+lock_kde() {
+  local files=(/etc/xdg/kscreenlockerrc "${XDG_CONFIG_HOME:-$HOME/.config}/kscreenlockerrc")
+  local autolock timeout lock_s grace password resume
+  # Defaults are kscreenlocker's own (settings/kscreenlockersettings.kcfg).
+  autolock=$(ini_get Daemon Autolock "${files[@]}"); autolock=${autolock:-true}
+  timeout=$(ini_get Daemon Timeout "${files[@]}"); timeout=${timeout:-5}
+  grace=$(ini_get Daemon LockGrace "${files[@]}"); grace=${grace:-5}
+  password=$(ini_get Daemon RequirePassword "${files[@]}"); password=${password:-true}
+  resume=$(ini_get Daemon LockOnResume "${files[@]}"); resume=${resume:-true}
+  lock_s=$(awk -v m="$timeout" 'BEGIN { printf "%d", m * 60 + 0.5 }')
+
+  if [[ $autolock != true ]]; then
+    fail "automatic screen locking is off (System Settings > Screen Locking)"
+  elif ((lock_s > max_lock)); then
+    fail "locks after $(human "$lock_s") idle (policy: $(human "$max_lock") or less)"
+  else
+    pass "locks after $(human "$lock_s") idle (policy: $(human "$max_lock") or less)"
+  fi
+  if [[ $password == true ]]; then
+    pass "unlocking requires the account password"
+    info "grace period: ${grace} s after locking before the password is needed"
+  else
+    fail "RequirePassword is off: the lock screen opens without a password"
+  fi
+  if [[ $resume == true ]]; then
+    pass "screen locks on resume from sleep"
+  else
+    fail "LockOnResume is off: waking from sleep does not lock"
+  fi
+  local plasma
+  plasma=$(pgrep -u "$USER" -x plasmashell 2>/dev/null)
+  [[ -n $plasma ]] || warn "no Plasma session running for $USER; settings read, not seen in force"
+}
+
+report() {
+  local model os
+  model="$(cat /sys/class/dmi/id/sys_vendor 2>/dev/null) $(cat /sys/class/dmi/id/product_name 2>/dev/null)"
+  os=$(. /etc/os-release && echo "$PRETTY_NAME")
+  command -v omarchy >/dev/null && os="Omarchy $(omarchy version 2>/dev/null) (Arch Linux)"
+
+  printf '%sEndpoint security controls%s\n' "$B" "$N"
+  info "host     $host"
+  info "user     $USER"
+  info "device   $model"
+  info "os       $os, kernel $(uname -r)"
+  info "checked  $(date '+%Y-%m-%d %H:%M:%S %Z')"
+
+  # --- Disk encryption: walk from the device backing / up to its disk and
+  # require a crypto_LUKS layer on the way.
+  section "1. Full-disk encryption"
+  local root_src chain luks
+  root_src=$(findmnt -no SOURCE / | sed 's/\[.*//')
+  chain=$(lsblk -sno NAME,TYPE,FSTYPE "$root_src" 2>/dev/null)
+  luks=$(lsblk -lsno NAME,FSTYPE "$root_src" 2>/dev/null | awk '$2 == "crypto_LUKS" { print $1 }')
+  if [[ -n $luks ]]; then
+    pass "root filesystem is on LUKS-encrypted /dev/$luks"
+    while read -r line; do info "$line"; done <<<"$chain"
+  else
+    fail "root filesystem ($root_src) has no LUKS layer"
+  fi
+  # Swap leaks memory to disk, so it must be in RAM (zram) or encrypted too. A
+  # swap file is judged by the device of the filesystem holding it.
+  local swap src fstypes
+  while read -r swap; do
+    [[ -n $swap ]] || continue
+    if [[ $swap == /dev/zram* ]]; then
+      info "swap $swap: in RAM, never written to disk"
+      continue
+    fi
+    src=$swap
+    [[ -f $swap ]] && src=$(findmnt -no SOURCE -T "$swap" | sed 's/\[.*//')
+    # Captured, not piped into grep -q: under pipefail that races SIGPIPE.
+    fstypes=$(lsblk -lsno FSTYPE "$src" 2>/dev/null)
+    if [[ $'\n'$fstypes$'\n' == *$'\n'crypto_LUKS$'\n'* ]]; then
+      info "swap $swap: inside the encrypted volume"
+    else
+      fail "swap $swap is not encrypted"
+    fi
+  done < <(swapon --noheadings --show=NAME 2>/dev/null)
+
+  # --- Screen lock: whichever desktop is actually running.
+  section "2. Automatic screen lock"
+  if command -v omarchy-shell >/dev/null; then
+    lock_omarchy
+  elif [[ ${XDG_CURRENT_DESKTOP:-} == *KDE* ]] || pgrep -u "$USER" -x plasmashell >/dev/null 2>&1; then
+    lock_kde
+  else
+    fail "unrecognised desktop (${XDG_CURRENT_DESKTOP:-unknown}); check the screen lock by hand"
+  fi
+
+  # --- Password manager: native apps, then browser extensions by store ID.
+  section "3. Password manager"
+  local found=() bin id name dir
+  for bin in bitwarden bw rbw 1password op keepassxc proton-pass; do
+    command -v "$bin" >/dev/null && found+=("$bin (app)")
+  done
+  declare -A ext=(
+    [nngceckbapebfimnlniiiahkandclblb]=Bitwarden
+    [aeblfdkhhhdcdjpifhhbdiojplfjncoa]=1Password
+    [ghmbeldphafepmbegfdlkpapadhbakde]="Proton Pass"
+    [oboonakemofpalcgghocfoadofidjkkk]=KeePassXC-Browser
+    [fdjamakpfbbddfjaooikfcpapjohcfmg]=Dashlane
+  )
+  for dir in "$HOME"/.config/{BraveSoftware/Brave-Browser,chromium,google-chrome,vivaldi,microsoft-edge}/*/Extensions; do
+    [[ -d $dir ]] || continue
+    for id in "${!ext[@]}"; do
+      [[ -d $dir/$id ]] || continue
+      name="${ext[$id]} (extension, ${dir#"$HOME"/.config/})"
+      found+=("${name%/Extensions)})")
+    done
+  done
+  # Firefox (and LibreWolf) list installed add-ons by ID in extensions.json.
+  # Read into a variable and pattern-matched rather than piped into grep -q.
+  declare -A fx=(
+    ["{446900e4-71c2-419f-a6a7-df9c091e268b}"]=Bitwarden
+    ["{d634138d-c276-4fc8-924b-40a0ea21d284}"]=1Password
+    ["78272b6fa58f4a1abaac99321d503a20@proton.me"]="Proton Pass"
+    ["keepassxc-browser@keepassxc.org"]=KeePassXC-Browser
+  )
+  local json profile
+  for json in "$HOME"/{.mozilla/firefox,.config/mozilla/firefox,.librewolf,.var/app/org.mozilla.firefox/.mozilla/firefox}/*/extensions.json; do
+    [[ -r $json ]] || continue
+    profile=${json%/extensions.json}
+    profile=${profile#"$HOME"/}
+    local content
+    content=$(<"$json")
+    for id in "${!fx[@]}"; do
+      [[ $content == *"\"id\":\"$id\""* ]] && found+=("${fx[$id]} (extension, ~/$profile)")
+    done
+  done
+  local flatpaks app
+  flatpaks=$(flatpak list --app --columns=application 2>/dev/null)
+  for app in com.bitwarden.desktop org.keepassxc.KeePassXC me.proton.Pass; do
+    [[ $'\n'$flatpaks$'\n' == *$'\n'$app$'\n'* ]] && found+=("$app (flatpak)")
+  done
+  if ((${#found[@]})); then
+    pass "password manager installed"
+    for name in "${found[@]}"; do info "$name"; done
+  else
+    fail "no known password manager found"
+  fi
+
+  # --- Antivirus: report honestly, never as a pass.
+  section "4. Antivirus / malware protection"
+  if command -v clamscan >/dev/null; then
+    av_checks
+  else
+    warn "no antivirus installed (Vanta cannot check this on any Linux)"
+  fi
+  if [[ $(systemctl is-active ufw 2>/dev/null) == active ]]; then
+    info "firewall: ufw active"
+  elif [[ $(systemctl is-active firewalld 2>/dev/null) == active ]]; then
+    info "firewall: firewalld active"
+  else
+    info "firewall: none active"
+  fi
+
+  section "Result"
+  if ((fails)); then
+    printf '  %s%d control(s) failing%s\n' "$R" "$fails" "$N"
+  else
+    printf '  %sall checked controls pass%s\n' "$G" "$N"
+  fi
+}
+
+# Print in colour to the terminal and plain text to the report file. Captured
+# first because report runs in a subshell and its fail count would be lost.
+text=$(report)
+printf '%s\n' "$text"
+sed 's/\x1b\[[0-9;]*m//g' <<<"$text" >"$out.txt"
+fails=$(grep -c 'FAIL  ' "$out.txt" || true)
+echo
+info "saved $out.txt"
+
+if $screenshot; then
+  # The focused window is the terminal running this. Give it a moment to
+  # render the last lines before grabbing it.
+  sleep 0.5
+  shot=false
+  if command -v hyprctl >/dev/null && command -v grim >/dev/null; then
+    geom=$(hyprctl activewindow -j | jq -r '"\(.at[0]),\(.at[1]) \(.size[0])x\(.size[1])"')
+    grim -g "$geom" "$out.png" && shot=true
+  elif command -v spectacle >/dev/null; then
+    spectacle --activewindow --background --nonotify --output "$out.png" && shot=true
+  fi
+  if $shot && [[ -s $out.png ]]; then
+    info "saved $out.png"
+  else
+    warn "no screenshot taken; capture this window by hand"
+  fi
+fi
+
+((fails == 0))

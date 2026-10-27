@@ -1,0 +1,13 @@
+[Unit]
+Description=Weekly ClamAV scan of ~/Downloads (Tuesday 09:00, on AC only)
+
+[Timer]
+OnCalendar=Tue *-*-* 09:00:00
+# Catch up a Tuesday missed while suspended or off, at the next wake or login.
+# The service's AC condition still applies to the catch-up run.
+Persistent=true
+# Never wake the machine for this.
+WakeSystem=false
+
+[Install]
+WantedBy=timers.target
