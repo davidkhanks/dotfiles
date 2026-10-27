@@ -50,6 +50,13 @@ STOW_PACKAGES=(bash bin clamav fish foot hypr nvim omarchy slack ssh starship tm
 #   pcsclite         -- PC/SC daemon; PIV/CCID access needs it running
 #   age              -- decrypts the work-repo manifest (secrets/*.age)
 #   age-plugin-yubikey -- lets age use the YubiKey PIV retired-slot identities
+#   sops             -- decrypts the secrets kept *inside* the work repos, as
+#                       opposed to the manifest above: `age` decides which
+#                       repos to clone, `sops` reads what is in them. Their
+#                       Makefiles shell out to it (`make view` and friends),
+#                       so without it those targets fail with "command not
+#                       found". Uses the age backend, which is why it is
+#                       grouped here and not with the other work tools.
 #   git/starship/tmux/fzf/neovim -- shipped by Omarchy's base install, so this
 #                       is a no-op there (--needed). Listed because their stowed
 #                       configs are applied on EVERY machine, including
@@ -58,7 +65,7 @@ PACKAGES_CORE=(stow git starship tmux fzf neovim)
 #   lxqt-openssh-askpass -- Wayland-native GUI PIN prompt for the hotplug
 #                           reload; gcr-ssh-askpass refuses to run standalone
 PACKAGES_YUBIKEY=(libfido2 yubikey-manager yubico-piv-tool pcsclite lxqt-openssh-askpass)
-PACKAGES_AGE=(age age-plugin-yubikey)   # decrypting the work-repo manifest
+PACKAGES_AGE=(age age-plugin-yubikey sops)  # age-based secret tooling
 #   aws-cli-v2 -- the AWS CLI. Explicitly v2, not the `aws-cli` package, which
 #                 is v1; they conflict and v2 provides the same `aws` binary.
 #                 140 MB installed, which is why it is gated rather than core.
