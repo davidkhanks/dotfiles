@@ -35,4 +35,43 @@
     "aliases": ["network-reset", "net-reset", "wifi-reset", "fix-network"],
     "action": "omarchy-launch-floating-terminal-with-presentation 'net-reset'"
   },
+
+  // ---------------------------------------------------------------------
+  // Device Check  (System > Device Check)
+  //
+  // For "my webcam / headset doesn't show up in Slack". Lists cameras, audio
+  // devices and USB devices, flags USB devices seen in the last week that are
+  // missing now, and shows the kernel's USB errors. Read-only, no sudo. See
+  // bin/.local/bin/device-check.
+  // ---------------------------------------------------------------------
+  "system.device-check": {
+    "icon": "󰍹",
+    "label": "Device Check",
+    "description": "Cameras, microphones, speakers, USB devices, missing devices and USB errors — webcam headset not showing up hub",
+    "aliases": ["device-check", "devices", "webcam-check", "usb-check"],
+    "action": "omarchy-launch-floating-terminal-with-presentation 'device-check'"
+  },
+
+  // ---------------------------------------------------------------------
+  // System menu order: Screensaver, Lock, Reset Network, Device Check,
+  // Suspend, Hibernate, Logout, Reboot, Shutdown.
+  //
+  // The menu has no order field: rows keep the position where they were
+  // first defined, defaults first, and overriding an id doesn't move it. So
+  // the stock rows after Lock are hidden ("when": "false") and redefined
+  // below under new ids, which lands them after the two rows above. The
+  // copies match /usr/share/omarchy/default/omarchy/omarchy-menu.jsonc as
+  // of 2026-11-03; if a stock row changes upstream, update its copy here.
+  // ---------------------------------------------------------------------
+  "system.suspend": {"when": "false"},
+  "system.hibernate": {"when": "false"},
+  "system.logout": {"when": "false"},
+  "system.reboot": {"when": "false"},
+  "system.shutdown": {"when": "false"},
+
+  "system.after-suspend": {"icon":"󰒲","label":"Suspend","when":"! omarchy-toggle-enabled suspend-off","action":"systemctl suspend"},
+  "system.after-hibernate": {"icon":"󰤁","label":"Hibernate","when":"omarchy-hibernation-available","action":"systemctl hibernate"},
+  "system.after-logout": {"icon":"󰍃","label":"Logout","action":"omarchy-system-logout"},
+  "system.after-reboot": {"icon":"󰜉","label":"Reboot","action":"omarchy-system-reboot"},
+  "system.after-shutdown": {"icon":"󰐥","label":"Shutdown","action":"omarchy-system-shutdown"},
 }

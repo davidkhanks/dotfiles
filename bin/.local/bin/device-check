@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+#
+# device-check -- what's plugged in, and what should be but isn't.
+#
+# For "my webcam / headset / keyboard doesn't show up". Read-only: changes
+# nothing and needs no sudo, so it's safe to run any time.
+#
+# The useful part is "Missing": USB devices the kernel saw in the last few
+# days that aren't connected now. An app's device list only shows what's on
+# the bus, so a device that's missing here is a cable, port or hub problem,
+# not an app setting. On 2026-11-03 the C920 webcam vanished this way: the
+# USB 2.0 half of the hub it hangs off never came up after a re-plug, and the
+# kernel logged "Cannot enable. Maybe the USB cable is bad?" for that chain.
+
+set -uo pipefail
+
+DAYS=7
+case "${1:-}" in
+  --days) DAYS="${2:?--days needs a number}" ;;
+  --help|-h)
+    printf 'usage: device-check [--days N]\n\n'
+    printf '  Lists cameras, audio devices and USB devices, USB devices seen in\n'
+    printf '  the last N days (default 7) that are missing now, and recent USB\n'
+    printf '  errors from the kernel. Changes nothing.\n\n'
+    exit 0 ;;
+  "") ;;
+  *) printf 'device-check: unknown argument: %s (try --help)\n' "$1" >&2; exit 2 ;;
+esac
+
+say()  { printf '\n\033[1;34m==>\033[0m \033[1m%s\033[0m\n' "$*"; }
+ok()   { printf '    \033[32m✓\033[0m %s\n' "$*"; }
+bad()  { printf '    \033[31m✗\033[0m %s\n' "$*"; }
+note() { printf '      %s\n' "$*"; }
+
+# ── Cameras ─────────────────────────────────────────────────────────
+say "Cameras"
+if command -v v4l2-ctl >/dev/null; then
+  # Device names are the unindented lines; each camera lists its /dev nodes below.
+  cams=$(v4l2-ctl --list-devices 2>/dev/null | grep -v '^[[:space:]]' | grep -v '^$' | sed 's/ (.*//; s/:$//')
+  if [ -n "$cams" ]; then
+    while IFS= read -r c; do ok "$c"; done <<<"$cams"
+  else
+    bad "no cameras found"
+  fi
+else
+  ls /dev/video* >/dev/null 2>&1 && ok "$(ls /dev/video* | wc -l) video nodes (install v4l-utils for names)" || bad "no /dev/video* nodes"
+fi
+
+# ── Audio ───────────────────────────────────────────────────────────
+# wpctl status: the Audio section's Sinks and Sources. "*" marks the default.
+if command -v wpctl >/dev/null; then
+  section() {
+    wpctl status 2>/dev/null | awk -v want="$1" '
+      /^Audio/ { audio=1; next }
+      /^(Video|Settings)/ { audio=0 }
+      audio && /[├└]─ / { s=$0; sub(/.*[├└]─ /, "", s); sub(/:$/, "", s); cur=s; next }
+      audio && cur==want && /[0-9]+\./ {
+        line=$0; def=(line ~ /\*/) ? " (default)" : ""
+        sub(/^[^0-9]*[0-9]+\. */, "", line); sub(/ *\[vol.*$/, "", line)
+        print line def
+      }'
+  }
+  say "Microphones and audio inputs"
+  srcs=$(section Sources)
+  if [ -n "$srcs" ]; then while IFS= read -r s; do ok "$s"; done <<<"$srcs"; else bad "none"; fi
+  say "Speakers and audio outputs"
+  sinks=$(section Sinks)
+  if [ -n "$sinks" ]; then while IFS= read -r s; do ok "$s"; done <<<"$sinks"; else bad "none"; fi
+fi
+
+# ── USB devices now ─────────────────────────────────────────────────
+say "USB devices connected"
+current_ids=$(lsusb | awk '{print $6}' | sort -u)
+lsusb | grep -viE 'root hub|[[:space:]]hub[[:space:]]*$|Hub$' \
+  | sed -E 's/^Bus [0-9]+ Device [0-9]+: ID ([0-9a-f:]+) (.*)$/\2  [\1]/' \
+  | sed -E 's/[[:space:]]+\[/  [/' | sort \
+  | while IFS= read -r d; do ok "$d"; done
+
+# ── Missing ─────────────────────────────────────────────────────────
+# Pair each "New USB device found, idVendor=X, idProduct=Y" with the
+# "Product:" line logged for the same port, across boots.
+say "Seen in the last $DAYS days but not connected now"
+seen=$(journalctl -k --since "$DAYS days ago" --no-pager -o short-iso 2>/dev/null | awk '
+  match($0, /usb ([0-9.-]+): New USB device found, idVendor=([0-9a-f]+), idProduct=([0-9a-f]+)/, m) {
+    id[m[1]] = m[2] ":" m[3]; when[m[1]] = $1; next
+  }
+  match($0, /usb ([0-9.-]+): Product: (.*)$/, m) && (m[1] in id) {
+    name[id[m[1]]] = m[2]; last[id[m[1]]] = substr(when[m[1]], 1, 16)
+  }
+  END { for (k in name) print k "\t" name[k] "\t" last[k] }')
+missing=0
+while IFS=$'\t' read -r vid name last; do
+  [ -z "$vid" ] && continue
+  grep -qx "$vid" <<<"$current_ids" && continue
+  bad "$name  [$vid]  last connected ${last/T/ }"
+  missing=$((missing + 1))
+done <<<"$seen"
+[ "$missing" -eq 0 ] && ok "nothing missing"
+
+# ── Errors ──────────────────────────────────────────────────────────
+say "USB errors since boot"
+errs=$(journalctl -k -b --no-pager -o short 2>/dev/null | grep -E \
+  'Cannot enable|unable to enumerate|over-current|device descriptor read|device not accepting address|disabled by hub|cannot reset|Maybe the USB cable is bad')
+if [ -n "$errs" ]; then
+  # Repeats of one message on one port collapse to a count and the latest time.
+  awk '{ t=$3; $1=$2=$3=$4=$5=""; sub(/^ +/, ""); sub(/address [0-9]+/, "address N"); n[$0]++; last[$0]=t }
+       END { for (k in n) printf "%s\t%d\t%s\n", last[k], n[k], k }' <<<"$errs" \
+    | sort | tail -8 | while IFS=$'\t' read -r t n msg; do
+        bad "$msg  (${n}x, last $t)"
+      done
+  if [ "$missing" -gt 0 ]; then
+    note ""
+    note "A missing device plus these errors usually means a bad cable or a hub"
+    note "that didn't come back up. Re-seat the cable to the hub the device is on,"
+    note "or plug the device straight into the laptop to rule the hub out."
+  fi
+else
+  ok "none"
+fi
+
+printf '\n'
