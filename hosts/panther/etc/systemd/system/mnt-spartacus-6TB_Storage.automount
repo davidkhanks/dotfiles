@@ -1,9 +1,27 @@
 # Enable THIS unit, not the .mount. Mounts on first access to the path and
 # unmounts again once idle, so a laptop that is off the tailnet simply fails
 # the access instead of stalling at boot.
+#
+# Deliberately has NO network ordering. An .automount unit only installs the
+# autofs trigger on the mount point; it never touches the network. systemd
+# orders automount units Before=local-fs.target, which runs before
+# sysinit.target and basic.target -- so an `After=tailscaled.service` here
+# closes a loop:
+#
+#   this.automount -> tailscaled -> NetworkManager -> basic.target
+#     -> sysinit.target -> local-fs.target -> this.automount
+#
+# systemd breaks an ordering cycle by DELETING one job from it, picking a
+# different victim on different boots. Observed on panther 2026-11-02: it
+# deleted dbus-broker.service, so NetworkManager never started and neither
+# Wi-Fi nor Ethernet came up, with nothing logged to explain it. Intermittent
+# by nature -- roughly every other boot.
+#
+# The network ordering belongs on the .mount unit, which is triggered on
+# access rather than during early boot, and already carries
+# `After=network-online.target tailscaled.service` plus `_netdev` and `nofail`.
 [Unit]
 Description=Automount SMB share 6TB_Storage on spartacus
-After=tailscaled.service
 
 [Automount]
 Where=/mnt/spartacus/6TB_Storage
