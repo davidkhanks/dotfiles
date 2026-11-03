@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+#
+# net-reset -- recover networking when nothing came up at boot.
+#
+# THE USUAL CAUSE, and why there is never an error message. A systemd ordering
+# cycle. The spartacus .automount unit used to carry
+# `After=tailscaled.service`; automount units are ordered Before=local-fs.target
+# which runs before sysinit.target and basic.target, so that single line closed
+# a loop back through NetworkManager. systemd breaks a cycle by DELETING one
+# job from it, choosing a different victim each boot. On 2026-11-02 the victim
+# was dbus-broker.service, so NetworkManager -- a D-Bus service -- never
+# started at all. Nothing failed, so nothing was logged, and both Wi-Fi and
+# Ethernet were simply absent.
+#
+# That root cause is fixed (the After= line is gone). This script stays as the
+# recovery path for whatever else leaves the stack half-up, and it reports
+# whether an ordering cycle is implicated so the diagnosis is not lost again.
+#
+# Safe to run when networking is already fine -- it restarts NetworkManager,
+# which drops connections for a few seconds and brings them back.
+
+set -uo pipefail
+
+CHECK_ONLY=false
+case "${1:-}" in
+  --check|-c) CHECK_ONLY=true ;;
+  --help|-h)
+    printf 'usage: net-reset [--check]\n\n'
+    printf '  (no args)  diagnose, then reset networking (needs sudo)\n'
+    printf '  --check    diagnose only, change nothing, no sudo\n\n'
+    exit 0 ;;
+  "") ;;
+  *) printf 'net-reset: unknown argument: %s (try --help)\n' "$1" >&2; exit 2 ;;
+esac
+
+# sudo needs a terminal to prompt on. Without one it blocks forever, which
+# looks like a hang, so refuse up front and say what to do instead.
+if ! $CHECK_ONLY && ! sudo -n true 2>/dev/null && [ ! -t 0 ]; then
+  printf 'net-reset: no terminal for the sudo prompt.\n' >&2
+  printf '           run this in a terminal, or use: net-reset --check\n' >&2
+  exit 1
+fi
+
+say()  { printf '\n\033[1;34m==>\033[0m \033[1m%s\033[0m\n' "$*"; }
+ok()   { printf '    \033[32m✓\033[0m %s\n' "$*"; }
+bad()  { printf '    \033[31m✗\033[0m %s\n' "$*"; }
+note() { printf '      %s\n' "$*"; }
+
+# ---------------------------------------------------------------- diagnose --
+say "Before"
+
+CYCLES=$(journalctl -b --no-pager 2>/dev/null | grep -c 'ordering cycle')
+if (( CYCLES > 0 )); then
+  bad "$CYCLES systemd ordering cycles this boot"
+  journalctl -b --no-pager 2>/dev/null \
+    | grep 'deleted to break ordering cycle' \
+    | sed -E 's/.*Job ([^ ]+)\/start deleted.*/\1/' | sort -u \
+    | while read -r j; do note "deleted job: $j"; done
+else
+  ok "no systemd ordering cycles this boot"
+fi
+
+for u in dbus-broker NetworkManager; do
+  if systemctl is-active --quiet "$u"; then ok "$u active"; else bad "$u NOT active"; fi
+done
+
+if rfkill list 2>/dev/null | grep -q 'Soft blocked: yes'; then
+  bad "an rfkill soft block is set"
+else
+  ok "no rfkill soft block"
+fi
+
+printf '\n'
+ip -br addr 2>/dev/null | grep -vE '^(lo|docker|veth|br-)' | sed 's/^/    /'
+
+if $CHECK_ONLY; then
+  printf '\n    (--check: nothing was changed; run without --check to reset)\n\n'
+  exit 0
+fi
+
+# ------------------------------------------------------------------- reset --
+say "Resetting"
+
+sudo rfkill unblock all              && ok "rfkill unblocked"
+sudo systemctl start dbus-broker     2>/dev/null
+sudo systemctl restart NetworkManager && ok "NetworkManager restarted"
+
+# USB NICs (the Ethernet expansion card) can miss their initial udev pass.
+sudo udevadm trigger --subsystem-match=net --action=add 2>/dev/null && ok "net devices re-triggered"
+
+nmcli networking on  >/dev/null 2>&1 && ok "networking enabled"
+nmcli radio wifi on  >/dev/null 2>&1 && ok "wifi radio on"
+
+# -------------------------------------------------------------------- wait --
+say "Waiting for a connection (up to 30s)"
+for i in $(seq 30); do
+  if nmcli -t -f STATE general 2>/dev/null | grep -q '^connected'; then break; fi
+  sleep 1
+done
+
+# ------------------------------------------------------------------ verify --
+say "After"
+STATE=$(nmcli -t -f STATE general 2>/dev/null)
+if [[ "$STATE" == connected* ]]; then ok "NetworkManager: $STATE"; else bad "NetworkManager: ${STATE:-unknown}"; fi
+
+printf '\n'
+ip -br addr 2>/dev/null | grep -vE '^(lo|docker|veth|br-)' | sed 's/^/    /'
+printf '\n'
+
+if ping -c1 -W3 1.1.1.1 >/dev/null 2>&1; then ok "internet reachable"
+else bad "no internet"; fi
+
+# By MagicDNS short name, the same way the .mount unit addresses it, so no
+# tailnet address is written into this file (the dotfiles repo is public).
+if ping -c1 -W3 spartacus >/dev/null 2>&1; then ok "tailnet reachable (spartacus)"
+else note "tailnet not reachable -- run: sudo systemctl restart tailscaled"; fi
+
+# --------------------------------------------------------------- last ditch --
+if [[ "$STATE" != connected* ]]; then
+  say "Still down"
+  note "Wi-Fi driver reload (this drops the radio for a few seconds):"
+  note "    sudo modprobe -r iwlmld iwlwifi && sudo modprobe iwlwifi"
+  note ""
+  note "If dbus-broker or NetworkManager was listed as a deleted job above,"
+  note "the ordering cycle is back. Check for a unit ordered After= a network"
+  note "service that systemd runs during early boot:"
+  note "    systemd-analyze verify <unit>"
+fi
+
+printf '\n'

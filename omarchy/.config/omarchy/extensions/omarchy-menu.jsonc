@@ -1,0 +1,38 @@
+{
+  // Extend the Quickshell Omarchy menu with JSONC.
+  //
+  // IDs are object keys. The parent is inferred from the dotted id, so
+  // "personal.notes" appears under "personal", and "personal" appears on the
+  // root menu. Reuse an existing id to override/extend it.
+  //
+  // Fields:
+  //   icon        Nerd Font glyph shown in the icon column.
+  //   label       Visible row title.
+  //   action      Shell command to run. If omitted, the row is a submenu.
+  //   target      Existing submenu id to open. Use for links/aliases.
+  //   provider    Runtime provider function/command returning JSON rows.
+  //   aliases     alternate `omarchy menu summon <name>` routes; also searchable.
+  //   description Optional subtitle and extra search text.
+  //   when        Shell condition; hide row when it fails.
+  //   checked     Shell condition; append ✓ when it succeeds.
+
+  // ---------------------------------------------------------------------
+  // Reset Network  (System > Reset Network)
+  //
+  // For the boots where nothing comes up -- no Wi-Fi, no Ethernet, and no
+  // error anywhere, because the service never started rather than failed.
+  // See bin/.local/bin/net-reset for the full explanation; the short version
+  // is that a systemd ordering cycle lets systemd delete an arbitrary job at
+  // boot, and dbus-broker or NetworkManager is sometimes the one it picks.
+  //
+  // Runs in a floating terminal so the diagnosis is visible and sudo has
+  // somewhere to prompt.
+  // ---------------------------------------------------------------------
+  "system.network-reset": {
+    "icon": "󰖩",
+    "label": "Reset Network",
+    "description": "Restart NetworkManager, clear rfkill, re-trigger NICs — wifi ethernet internet offline no connection",
+    "aliases": ["network-reset", "net-reset", "wifi-reset", "fix-network"],
+    "action": "omarchy-launch-floating-terminal-with-presentation 'net-reset'"
+  },
+}
