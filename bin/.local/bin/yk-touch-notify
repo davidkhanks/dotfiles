@@ -49,8 +49,33 @@ ICON_OK=${YK_ICON_OK:-object-select-symbolic}
 #
 # canberra-gtk-play takes a sound-theme NAME rather than a path, so it follows
 # whatever sound theme is installed. Set YK_SOUND=none to stay silent.
-# Alternatives present here: dialog-warning, bell, message-new-instant, complete.
+#
+# In the freedesktop theme (the one in use) window-attention is a SYMLINK to
+# dialog-warning.oga, and so was dialog-error, the old miss sound -- the two
+# outcomes this script distinguishes used to make the identical 0.5s noise.
+# Fixed by moving the MISS sound off that file, not this one; see SOUND_MISS.
+# Check any name with: readlink /usr/share/sounds/freedesktop/stereo/<name>.oga
+#
+# It is short enough (0.5s) that the Bluetooth wake described at
+# start_sound_loop below can swallow it whole. That is deliberate and
+# acceptable: the prompt now repeats, so losing the first beep costs a few
+# seconds of a ~15s window rather than the whole notification.
+#
+# Real files in this theme, if you ever want a longer one:
+# message-new-instant (1.03s), complete (1.09s), dialog-warning (0.5s),
+# bell (0.14s), suspend-error, phone-incoming-call, alarm-clock-elapsed.
 SOUND=${YK_SOUND:-window-attention}
+
+# Playback gain in dB, passed to canberra-gtk-play -V. 0.0 is the theme's own
+# level; positive amplifies. The default sink here is a Bluetooth headset
+# sitting at 45% while the built-in speakers are muted, so the theme level
+# alone is easy to miss. Set YK_SOUND_VOLUME=0.0 to leave it alone.
+SOUND_VOLUME=${YK_SOUND_VOLUME:-6.0}
+
+# Seconds between repeats while the key is still waiting. The key gives up
+# after ~15s, so this is bounded at a handful of repeats. 0 disables repeating
+# and restores the old play-once behaviour.
+SOUND_REPEAT_SEC=${YK_SOUND_REPEAT_SEC:-3}
 
 # Icon for a missed touch. dialog-warning-symbolic is in both Yaru and
 # Adwaita; the non-symbolic dialog-warning is Yaru-only.
@@ -69,9 +94,17 @@ ICON_MISS=${YK_ICON_MISS:-dialog-warning-symbolic}
 MISS_SAMPLES=${YK_MISS_SAMPLES:-28}    # 28 x 0.5s = 14s
 
 # Sound for a missed touch, distinct from the prompt so the two are tellable
-# apart without looking. Also present: suspend-error, dialog-warning, bell.
+# apart without looking. A soft descending two-tone, chosen by ear against the
+# prompt ding -- the point is that a miss must not be mistakable for a prompt
+# you still have time to answer.
+#
+# Not dialog-error, the old default: it is a symlink to dialog-warning.oga,
+# which is what the prompt resolves to, so the two sounded identical and the
+# distinction this function goes to the trouble of making was inaudible.
+# Not suspend-error either -- real and distinct, but it reads as an alarm,
+# which is the wrong register for "you missed it, just run the command again".
 # YK_SOUND_MISS=none to stay silent.
-SOUND_MISS=${YK_SOUND_MISS:-dialog-error}
+SOUND_MISS=${YK_SOUND_MISS:-service-logout}
 
 find_device() {
   local d p
@@ -90,13 +123,70 @@ notify_id=""
 
 have_player() { command -v canberra-gtk-play >/dev/null 2>&1; }
 
+vol_args=()
+[[ -n ${SOUND_VOLUME:-} && $SOUND_VOLUME != none ]] && vol_args=(-V "$SOUND_VOLUME")
+
 # Backgrounded and detached: the poll loop must not wait on audio, and a
 # missing player or a dead audio session must not take the daemon down.
 play_sound() {
   local name=${1:-}
   [[ -n $name && $name != none ]] || return 0
   have_player || return 0
-  ( canberra-gtk-play -i "$name" >/dev/null 2>&1 & ) &
+  ( canberra-gtk-play "${vol_args[@]}" -i "$name" >/dev/null 2>&1 & ) &
+}
+
+sound_pid=""
+
+# Repeat the prompt sound while the key is waiting, rather than playing it
+# once. Two measured reasons, both on this machine:
+#
+#   1. The default sink is a Bluetooth headset, and the A2DP transport is
+#      released once the node goes idle -- `pw-cli info <id>` shows
+#      api.bluez5.transport = "" while nothing is playing. The link has to be
+#      re-acquired for the next sound, which costs on the order of a second,
+#      so a short sample after a quiet period is frequently swallowed whole.
+#      That is the "notification appeared but I never heard it" case.
+#   2. A single beep is easy to miss if you happen to be looking away at that
+#      moment, which is the entire scenario this script exists for.
+#
+# canberra-gtk-play BLOCKS for the duration (~1.2s measured), so the real gap
+# between beeps is that plus SOUND_REPEAT_SEC. The key gives up after ~15s, so
+# at the default this is about four repeats before the miss sound takes over.
+start_sound_loop() {
+  local name=${1:-}
+  [[ -n $name && $name != none ]] || return 0
+  have_player || return 0
+
+  # Play once up front either way, so behaviour with repeating disabled is
+  # exactly what it was before.
+  if [[ $SOUND_REPEAT_SEC == 0 || $SOUND_REPEAT_SEC == none ]]; then
+    play_sound "$name"
+    return 0
+  fi
+
+  (
+    while :; do
+      canberra-gtk-play "${vol_args[@]}" -i "$name" >/dev/null 2>&1
+      sleep "$SOUND_REPEAT_SEC"
+    done
+  ) &
+  sound_pid=$!
+}
+
+stop_sound_loop() {
+  [[ -n $sound_pid ]] || return 0
+  # The subshell is either sleeping or blocked in canberra-gtk-play, and
+  # killing only the subshell would leave that child to finish its sample
+  # after the touch has already landed. Job control is off in a script, so the
+  # subshell shares our process group and kill -PGID is not an option.
+  # Collect the children BEFORE killing the loop, so it cannot spawn a
+  # replacement between the two calls.
+  local kids
+  kids="$(pgrep -P "$sound_pid" 2>/dev/null)" || true
+  kill "$sound_pid" 2>/dev/null || true
+  [[ -n $kids ]] && kill $kids 2>/dev/null
+  wait "$sound_pid" 2>/dev/null || true
+  sound_pid=""
 }
 
 open_notification() {
@@ -104,7 +194,7 @@ open_notification() {
   # lands, rather than lingering after it is no longer true.
   notify_id="$(notify-send -p -u critical -a "$APP_NAME" -i "$ICON" -t 0 \
     "Touch your YubiKey" "An operation is waiting on the key." 2>/dev/null)" || notify_id=""
-  play_sound "$SOUND"
+  start_sound_loop "$SOUND"
 }
 
 # Omarchy will not let a sender dismiss a visible toast, so this replaces it
@@ -121,6 +211,9 @@ open_notification() {
 # Net effect: sticky for as long as the key is actually waiting, then clears
 # itself a few seconds after the touch lands. Nothing to dismiss by hand.
 close_notification() {
+  # Unconditional and first: the loop must stop even when there is no
+  # notification id to clear, or a failed notify-send would leave it beeping.
+  stop_sound_loop
   [[ -n $notify_id ]] || return 0
   # Called with no argument from the signal trap: the daemon is going away
   # while a prompt is up, and it has no idea how that wait ended. Clear the
