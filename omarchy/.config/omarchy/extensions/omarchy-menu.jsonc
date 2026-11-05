@@ -53,8 +53,38 @@
   },
 
   // ---------------------------------------------------------------------
+  // Compliance Check  (System > Compliance Check)
+  //
+  // SOC 2 endpoint evidence for a compliance platform that cannot monitor
+  // this machine: Vanta's agent is Debian/Ubuntu only and even there detects
+  // nothing on Linux beyond disk encryption. Reads each control from the
+  // live system rather than from config files, so what it prints is what is
+  // actually in force. Read-only, no sudo. See bin/.local/bin/compliance-check.
+  //
+  // Writes ~/reports/compliance-<host>-<timestamp>.txt and exits non-zero if
+  // any control FAILs. Add --screenshot to the action if you want the PNG
+  // that Vanta accepts as evidence captured on every run; left off here
+  // because the common case is checking, not filing.
+  //
+  // Icon is U+F0565, Material Design shield-check -- same family as the
+  // other System rows, and verified by rendering it from
+  // JetBrainsMonoNerdFont-Regular.ttf rather than trusting the codepoint
+  // name. Note the stock Setup > Security icon (U+EB11) is a KEY, not a
+  // shield. Write icons as \uXXXX escapes, never as literal glyphs: a
+  // literal pasted through a shell heredoc here arrived as an empty string
+  // and the row rendered with no icon at all.
+  // ---------------------------------------------------------------------
+  "system.compliance-check": {
+    "icon": "󰕥",
+    "label": "Compliance Check",
+    "description": "SOC 2 endpoint controls: disk encryption, screen lock, firewall, updates — security review audit evidence vanta",
+    "aliases": ["compliance-check", "security-check", "security-review", "soc2", "audit"],
+    "action": "omarchy-launch-floating-terminal-with-presentation 'compliance-check'"
+  },
+
+  // ---------------------------------------------------------------------
   // System menu order: Screensaver, Lock, Reset Network, Device Check,
-  // Suspend, Hibernate, Logout, Reboot, Shutdown.
+  // Compliance Check, Suspend, Hibernate, Logout, Reboot, Shutdown.
   //
   // The menu has no order field: rows keep the position where they were
   // first defined, defaults first, and overriding an id doesn't move it. So
