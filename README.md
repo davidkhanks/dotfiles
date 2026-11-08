@@ -340,12 +340,15 @@ needs `omarchy bar move --before`/`--after`:
 ```
 
 `BAR_DISABLED` is the other half of this: first-party widgets deliberately
-turned off because something else took their place (`omarchy.workspaces` for
-`jankeesvw.workspace-name`, `omarchy.keyboard-layout` for
-`davidkhanks.kblayout`). Omarchy ships both **enabled**, so without the list a
-rebuild brings them back alongside their replacements and the bar shows each
-job twice. Only widgets in Omarchy's default layout belong there — one that
-ships disabled is already off.
+turned off because something else took their place (currently just
+`omarchy.keyboard-layout`, for `davidkhanks.kblayout`). Omarchy ships them
+**enabled**, so without the list a rebuild brings them back alongside their
+replacements and the bar shows each job twice. Only widgets in Omarchy's
+default layout belong there — one that ships disabled is already off.
+
+`omarchy.workspaces` used to be listed too, displaced by the third-party
+`jankeesvw.workspace-name` (workspace icons rather than numbers). That plugin
+was removed on 2026-11-06 and the stock numbered widget is back.
 
 Placement is applied **only on first enable**. Re-applying it every run would
 undo any reordering done by dragging widgets on the bar, which Omarchy supports

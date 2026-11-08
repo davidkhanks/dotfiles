@@ -1258,10 +1258,17 @@ step_yubikey_ssh() {
 # position inside it -- ordering needs `omarchy bar move --before/--after`.
 declare -A OWN_PLUGIN_PLACEMENT=(
   [davidkhanks.lock]="center|--section center --before omarchy.indicators"
-  # Left, after the workspace widget. Note the anchor is the third-party
-  # workspace-name widget, not omarchy.workspaces -- BAR_DISABLED turns the
-  # first-party one off, so anchoring to it would silently no-op.
-  [davidkhanks.kblayout]="left|--section left --after jankeesvw.workspace-name"
+  # Left, after the workspace widget. The anchor is omarchy.workspaces, the
+  # first-party widget, which is no longer in BAR_DISABLED.
+  #
+  # It used to anchor to the third-party jankeesvw.workspace-name, which
+  # showed workspace icons instead of numbers. That plugin was removed on
+  # 2026-11-06 in favour of the stock numbers. Note bootstrap never had an
+  # ensure_plugin call for it, so this anchor could only ever resolve on a
+  # machine where it had been installed BY HAND -- on a fresh build it
+  # silently no-opped while BAR_DISABLED also turned the first-party widget
+  # off, leaving the bar with no workspace widget at all.
+  [davidkhanks.kblayout]="left|--section left --after omarchy.workspaces"
 )
 
 # First-party bar widgets deliberately turned off because something else took
@@ -1271,8 +1278,9 @@ declare -A OWN_PLUGIN_PLACEMENT=(
 # Only widgets in Omarchy's default layout belong here. A widget that ships
 # disabled is already off and needs no help.
 BAR_DISABLED=(
-  # replaced by jankeesvw.workspace-name
-  "omarchy.workspaces"
+  # omarchy.workspaces was here, replaced by jankeesvw.workspace-name (icons
+  # rather than numbers). That plugin was removed on 2026-11-06 and the stock
+  # numbered widget is wanted again, so it must NOT be disabled.
   # replaced by davidkhanks.kblayout, which switches the whole seat rather than
   # trying to guess which of the ALT's four keyboard devices to name
   "omarchy.keyboard-layout"
