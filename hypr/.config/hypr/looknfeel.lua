@@ -88,3 +88,8 @@ o.window({ class = "^(slack)$" }, { tag = "-default-opacity", opacity = "1 1" })
 -- moment the YubiKey is replugged (see yubikey-ssh-reload.service), so `pin`
 -- keeps it on screen across workspace switches.
 o.window({ class = "^(lxqt-openssh-askpass)$" }, { "float", "center", "pin" })
+
+-- Opt another application in to Omarchy's standard transparency.
+-- Find its class with: hyprctl clients
+-- o.transparent_window("my-app")
+-- o.transparent_window("my-app", "0.9 0.85") -- Custom active/inactive opacity.
