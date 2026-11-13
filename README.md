@@ -31,7 +31,7 @@ own without re-answering every run.
 
 | Module | Covers |
 |---|---|
-| `yubikey` | libfido2/ykman/pcscd, `~/.ssh/config`, public key export |
+| `yubikey` | libfido2/ykman/pcscd, `~/.ssh/config`, public key export, and `otp`'s runtime deps (wl-clipboard, libnotify) |
 | `coolercontrol` | `coolercontrol` (repo) or `coolercontrol-bin` (AUR), `nct6775`, the daemon, `hosts/<host>/` config |
 | `slack` | `slack-desktop`, the Wayland desktop entry, MIME database |
 | `brave` | Brave via Omarchy's installer, set as the default browser |
@@ -447,6 +447,90 @@ git diff --cached    # after staging, read it before pushing
 ```
 
 ## Gotchas worth knowing
+
+**MFA codes come from the YubiKey, not a phone.** Some services have no
+passkey or WebAuthn option — Canvas is the example that prompted this, where
+Instructure's MFA is TOTP with only SMS and backup codes as alternatives, so a
+security key cannot be registered directly. What the key *can* do is hold the
+TOTP seed in its OATH applet, which is what `bin/.local/bin/otp` reads.
+**OATH is not keyboard emulation**: the key computes the code but cannot type
+it, and on panther the OTP/keyboard interface is disabled over USB entirely
+(`Enabled USB interfaces: FIDO, CCID`). Touching the key only *authorises* the
+request — something still has to ask over CCID and put the answer on the
+clipboard. Enrol with the secret omitted from the command line so the base32
+seed stays out of shell history:
+
+```bash
+ykman oath accounts add -t -i Canvas "<account>"   # prompts for the seed
+```
+
+OATH secrets cannot be exported from a YubiKey, so keep each service's backup
+codes somewhere else — not in this repo — and add the seed to any spare key at
+enrolment time, because there is no copying it afterwards.
+
+**The OATH applet has a password, and each machine has to be told it once.**
+It is what stops a stolen key from handing over codes, and `ykman oath access
+change` sets it. After that every `ykman oath` call needs it, `otp` included —
+and ykman asks with a *hidden* prompt, which needs a real terminal. A keybind
+or a menu row has none, so ykman falls back to a visible prompt, finds no
+input, and aborts; `otp` catches that and says what to run rather than failing
+mysteriously. Run this once in a terminal on each machine:
+
+```bash
+otp --unlock          # = ykman oath access remember
+```
+
+That stores the *derived access key* — not the password — in
+`~/.local/share/ykman/oath_keys.json`, keyed to that YubiKey. It survives
+reboots and replugs but does not follow you to another machine, which is the
+point: that file plus the key is full OATH access, so it is mode 600 and
+belongs nowhere else, least of all in this repo. `ykman oath access forget`
+drops it again.
+
+Keep the password itself in a password manager. There is no recovery: `ykman
+oath reset` is the only way back into a locked applet and it wipes every
+credential on it, so forgetting the password means re-enrolling every service
+from its backup codes.
+
+**The touch prompt is per account, and read from ykman, not guessed.** Touch
+policy is fixed when a credential is created and ykman cannot report it —
+`accounts list` has no flag for it. But ykman writes `Touch your YubiKey...`
+to stderr *before* it blocks, about 500ms in, so `otp` runs it in the
+background and watches that file: a touch-required account gets the prompt, a
+no-touch one never sees it. Timing alone would not do, because a no-touch code
+still takes ~420ms, mostly ykman's own startup. To change a credential's touch
+policy, re-add it over itself with the seed — `ykman oath accounts add -f -i
+<Issuer> "<account>"`, with or without `-t`; there is no window where the
+credential is missing, and no other command can do it.
+
+**Adding a service is one menu row and no code.** `otp <query>` matches the
+stored `<issuer>:<name>`, so enrol on the key and add a row to
+`omarchy/.config/omarchy/extensions/omarchy-menu.jsonc` with
+`"action": "otp <Issuer>"`. The query must match **exactly one** account:
+`ykman oath accounts code -s` requires a single match, and touch-required
+credentials cannot be disambiguated any other way. `otp --list` shows what is
+on the key. Currently Canvas, Google, Betterment, Gusto and Atlassian.
+
+Reachable two ways: **`SUPER + ALT + C`**, and the root menu's **OTP**
+submenu (`SUPER + SPACE` → OTP → Canvas).
+
+**`SUPER + SHIFT + C` is already Calendar.** Stock Omarchy binds it in
+`applications.lua`, so Canvas OTP uses **`SUPER + ALT + C`** instead, next to
+the other `SUPER + ALT` overrides. `hyprctl binds` reports keys in **upper
+case** — grepping for `key: c` finds nothing and makes a taken key look free.
+As of 2026-11-12 the free `SUPER + SHIFT` letters were R, U, V and Z.
+
+**A new root menu row always lands at the bottom, and a submenu cannot be
+reordered at all.** `mergeMenuSources` merges the stock menu first and pushes
+an id onto the order list only the first time it sees it, so a new user id is
+appended; redefining an existing id merges into its original position. There
+is no `order` or `index` field in the schema, and the two source paths are
+hardcoded, so there is no full-order override either. The trick used for the
+System rows — hide the stock row with `"when": "false"` and redefine it under
+a new id — only works for **leaf** rows. Redefining a *submenu* row under a
+new id orphans its children, which resolve by dotted prefix, so moving one
+means mirroring every descendant too. That is why **OTP sits after System**
+rather than under Apps: the nine root rows between them carry 415 children.
 
 **tmux loads two configs, and ours loses.** tmux's compiled-in search path is
 `/etc/tmux.conf : ~/.tmux.conf : $XDG_CONFIG_HOME/tmux/tmux.conf :

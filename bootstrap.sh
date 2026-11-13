@@ -64,7 +64,17 @@ STOW_PACKAGES=(bash bin clamav fish foot hypr nvim omarchy slack ssh starship tm
 PACKAGES_CORE=(stow git starship tmux fzf neovim)
 #   lxqt-openssh-askpass -- Wayland-native GUI PIN prompt for the hotplug
 #                           reload; gcr-ssh-askpass refuses to run standalone
-PACKAGES_YUBIKEY=(libfido2 yubikey-manager yubico-piv-tool pcsclite lxqt-openssh-askpass)
+#   wl-clipboard     -- wl-copy, how bin/.local/bin/otp delivers a one-time
+#                       code. NOT pulled in by the omarchy package: on panther
+#                       it was explicitly installed, so a fresh machine can
+#                       easily lack it and otp then has nowhere to put a code.
+#   libnotify        -- notify-send, otp's only output channel. It arrives as a
+#                       dependency of assorted desktop apps, which is luck, not
+#                       a guarantee. Without it otp's status and errors are
+#                       silent -- the one failure mode worth spending a package
+#                       to avoid, since a keybind has no terminal to print to.
+PACKAGES_YUBIKEY=(libfido2 yubikey-manager yubico-piv-tool pcsclite lxqt-openssh-askpass
+                  wl-clipboard libnotify)
 PACKAGES_AGE=(age age-plugin-yubikey sops)  # age-based secret tooling
 #   aws-cli-v2 -- the AWS CLI. Explicitly v2, not the `aws-cli` package, which
 #                 is v1; they conflict and v2 provides the same `aws` binary.

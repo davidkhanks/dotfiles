@@ -59,6 +59,21 @@ o.bind("SUPER + SHIFT + J", "Swap window down", hl.dsp.window.swap({ direction =
 o.bind("SUPER + SHIFT + K", "Swap window up", hl.dsp.window.swap({ direction = "u" }))
 o.bind("SUPER + SHIFT + L", "Swap window to the right", hl.dsp.window.swap({ direction = "r" }))
 
+-- Canvas MFA code from the YubiKey onto the clipboard. Canvas has no passkey
+-- support (TOTP only), so the seed lives in the key's OATH applet; see
+-- bin/.local/bin/otp. The code lands on the clipboard -- just paste it.
+-- Canvas is enrolled WITHOUT a touch requirement, so nothing asks for the
+-- key; otp only shows a touch prompt for accounts that actually need one.
+--
+-- `otp` takes the account as an argument, so another service is one more
+-- bind -- but only Canvas has one, because the root menu's OTP submenu
+-- already covers the rest without spending a key combination on each.
+--
+-- NOT SUPER + SHIFT + C, which stock Omarchy already binds to Calendar
+-- (applications.lua). SUPER + ALT + C was free and keeps the C mnemonic,
+-- alongside the other SUPER + ALT overrides above.
+o.bind("SUPER + ALT + C", "Canvas OTP", "otp Canvas")
+
 -- ---------------------------------------------------------------------------
 -- Middle click does nothing
 -- ---------------------------------------------------------------------------

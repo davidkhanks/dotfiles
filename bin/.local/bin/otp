@@ -1,0 +1,184 @@
+#!/usr/bin/env bash
+#
+# otp -- copy a one-time code from the YubiKey's OATH applet to the clipboard.
+#
+#   otp <query>      code for the single account matching <query>
+#   otp --list       show the accounts stored on the key
+#   otp --unlock     remember the OATH password on this machine (terminal only)
+#
+# <query> is matched against the stored account name, which ykman formats as
+# "<issuer>:<name>" -- so `otp Canvas` finds "Canvas:david@example.com". It
+# must match exactly ONE account: `ykman oath accounts code -s` requires a
+# single match, and touch-required credentials cannot be disambiguated any
+# other way. `otp --list` shows what is on the key.
+#
+# WHY THIS EXISTS. Some services have no passkey/WebAuthn option -- Canvas is
+# the example that prompted this, where Instructure's MFA is TOTP with only
+# SMS and backup codes as alternatives, so a security key cannot be registered
+# directly. What the key CAN do is hold the TOTP seed in its OATH applet,
+# which moves the code off a phone and onto the key already plugged in here:
+#
+#   ykman oath accounts add -t -i <Issuer> "<account>"
+#
+# Omit the secret from the command line -- ykman prompts for it, which keeps
+# the base32 seed out of shell history. `-t` requires a touch to generate.
+#
+# WHY A SCRIPT AND NOT JUST A TOUCH. OATH is not keyboard emulation. The key
+# computes the code but cannot type it; on panther the OTP/keyboard interface
+# is disabled over USB entirely (`Enabled USB interfaces: FIDO, CCID`).
+# Touching the key only AUTHORISES the request -- something still has to ask
+# over CCID and put the answer somewhere useful.
+#
+# THE OATH PASSWORD. The applet is password-protected, so every ykman oath call
+# needs it. ykman asks with a HIDDEN prompt, which needs a real terminal -- a
+# keybind or a menu row has none, so it aborts rather than waiting. Run
+# `otp --unlock` once per machine in a terminal; ykman then stores the derived
+# access key in ~/.local/share/ykman/oath_keys.json (mode 600, keyed to this
+# YubiKey) and stops asking. It survives reboots and replugs but does not
+# follow you to another machine. `ykman oath access forget` undoes it.
+#
+# ADDING A SERVICE is a menu row, not a code change: enrol it on the key, then
+# add a row to omarchy/.config/omarchy/extensions/omarchy-menu.jsonc with
+# "action": "otp <Issuer>". Nothing here needs touching.
+#
+# The code is shown in the success notification as well as copied. That is a
+# deliberate trade: an authenticator app displays codes the same way, it beats
+# a failed paste, and it is void after one period.
+#
+# Exit codes: 0 copied, 1 no key / no match / no touch / locked / bad output.
+
+set -uo pipefail
+
+CLEAR=${OTP_CLEAR:-1}     # wipe the clipboard once the code expires
+PERIOD=${OTP_PERIOD:-30}  # TOTP default; override for an odd issuer
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  otp <query>    copy the code for the account matching <query>  (e.g. otp Canvas)
+  otp --list     list the accounts stored on the YubiKey
+  otp --unlock   remember the OATH password on this machine (run in a terminal)
+
+Environment:
+  OTP_CLEAR=0    leave the code on the clipboard after it expires
+  OTP_PERIOD=N   TOTP period in seconds (default 30)
+USAGE
+}
+
+case ${1:-} in
+  ''|-h|--help) usage; exit 0 ;;
+  -l|--list)    exec ykman oath accounts list ;;
+  -u|--unlock)
+      # ykman's password prompt is hidden, so it needs a real terminal. Say so
+      # instead of exec'ing into a prompt that cannot be answered -- this is
+      # the one subcommand a menu row or keybind must not try to run.
+      if [[ ! -t 0 ]]; then
+        notify-send -a "OTP" -u critical -i dialog-error \
+          "OTP unlock needs a terminal" "Run: otp --unlock" 2>/dev/null
+        echo "otp --unlock must be run in a terminal." >&2
+        exit 1
+      fi
+      exec ykman oath access remember ;;
+esac
+
+ACCOUNT=$1
+LABEL=${ACCOUNT%%:*}      # "Canvas:me@x" and "Canvas" both display as "Canvas"
+
+nid=""
+note() { # note <urgency> <icon> <summary> <body> -- replaces its own toast
+  local args=(-a "OTP" -p -u "$1" -i "$2")
+  [[ -n $nid ]] && args+=(-r "$nid")
+  nid=$(notify-send "${args[@]}" "$3" "$4" 2>/dev/null) || nid=""
+}
+
+die() { note critical dialog-error "$LABEL OTP failed" "$1"; exit 1; }
+
+command -v ykman   >/dev/null || die "ykman is not installed."
+command -v wl-copy >/dev/null || die "wl-copy is not installed."
+
+# stderr is captured SEPARATELY, not folded in with 2>&1. ykman prints "Touch
+# your YubiKey..." to stderr on every touch-required credential, including on
+# success, so merging the streams puts that prompt in front of the code and
+# the digit check below rejects a perfectly good code.
+#
+# stdin is /dev/null so that an unremembered OATH password fails FAST. ykman
+# falls back to a visible prompt when it cannot control terminal echo, and a
+# keybind inherits whatever stdin the compositor had -- if that never reaches
+# EOF, ykman waits for a password forever, holding the OATH session open.
+outfile=$(mktemp) && errfile=$(mktemp) && rcfile=$(mktemp) ||
+  die "Could not create a temporary file."
+
+# Run it in the background so the touch prompt can be decided from what ykman
+# actually does. The subshell records ykman's status itself: `wait` would
+# report the subshell's, which is the status of the printf.
+{ ykman oath accounts code -s "$ACCOUNT" >"$outfile" 2>"$errfile" </dev/null
+  printf '%s' $? >"$rcfile"; } &
+ykpid=$!
+
+# Ask for a touch only when this credential needs one. ykman cannot report a
+# credential's touch policy -- `accounts list` has no flag for it and the
+# policy is fixed at creation -- but it writes "Touch your YubiKey..." to
+# stderr BEFORE it blocks, about 500ms in, so watching that file reads the
+# real policy instead of guessing from elapsed time. A no-touch credential
+# answers in ~420ms (mostly ykman's startup), which is too close to call on a
+# timer. Without this, every account got a touch prompt it might not need.
+#
+# Poll rcfile rather than `kill -0 $ykpid`: a finished child stays a zombie
+# until it is reaped, so kill -0 keeps succeeding and never signals the end.
+for ((i = 0; i < 25; i++)); do
+  [[ -s $rcfile ]] && break              # finished; no touch was ever needed
+  if [[ -s $errfile && $(<"$errfile") == *[Tt]ouch* ]]; then
+    note normal dialog-password "$LABEL OTP" "Touch your YubiKey…"
+    break                                 # nothing further to watch for
+  fi
+  sleep 0.1
+done
+
+wait "$ykpid" 2>/dev/null
+rc=$(<"$rcfile"); rc=${rc:-1}
+out=$(<"$outfile"); err=$(<"$errfile")
+rm -f "$outfile" "$errfile" "$rcfile"
+
+if (( rc != 0 )); then
+  case $err in
+    *"Failed connecting"*|*"No YubiKey"*|*"not found"*)
+        die "No YubiKey found — is it plugged in?" ;;
+    *[Pp]assword*|*"Authentication required"*|*[Ll]ocked*|*Aborted*)
+        # The applet is password-protected and this machine has not been told
+        # the password yet. ykman's prompt is hidden and there is no terminal
+        # here, so it aborts; say what to run rather than surface that.
+        die "OATH password not remembered on this machine — run: otp --unlock" ;;
+    *"Multiple matches"*)
+        die "'$ACCOUNT' matches more than one account. Narrow it; see: otp --list" ;;
+    *"No matching"*|*"No account"*)
+        die "No account matching '$ACCOUNT'. See: otp --list" ;;
+    *[Tt]imed*|*[Tt]imeout*)
+        die "Touch timed out — run it again and touch the key." ;;
+    *)  die "${err:-ykman failed with no output}" ;;
+  esac
+fi
+
+code=${out//[$'\n\r\t ']/}
+[[ $code =~ ^[0-9]{6,8}$ ]] || die "Unexpected ykman output: ${out:0:40}"
+
+printf '%s' "$code" | wl-copy || die "Could not reach the clipboard."
+
+left=$(( PERIOD - $(date +%s) % PERIOD ))
+if (( left <= 3 )); then
+  note normal dialog-password "$LABEL code copied" \
+    "$code — expires in ${left}s, run again for a fresh one"
+else
+  note normal dialog-password "$LABEL code copied" "$code — valid ${left}s"
+fi
+
+# Clear the clipboard when the code dies, but only if it is still ours, so
+# anything copied in the meantime survives.
+if [[ $CLEAR == 1 ]]; then
+  (
+    sleep "$left"
+    [[ $(wl-paste --no-newline 2>/dev/null) == "$code" ]] && wl-copy --clear
+  ) >/dev/null 2>&1 &
+  disown
+fi
+
+exit 0
