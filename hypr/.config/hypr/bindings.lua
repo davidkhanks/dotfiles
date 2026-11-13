@@ -62,8 +62,11 @@ o.bind("SUPER + SHIFT + L", "Swap window to the right", hl.dsp.window.swap({ dir
 -- Canvas MFA code from the YubiKey onto the clipboard. Canvas has no passkey
 -- support (TOTP only), so the seed lives in the key's OATH applet; see
 -- bin/.local/bin/otp. The code lands on the clipboard -- just paste it.
--- Canvas is enrolled WITHOUT a touch requirement, so nothing asks for the
--- key; otp only shows a touch prompt for accounts that actually need one.
+-- Whether the key asks for a touch first is a property of each credential,
+-- fixed when it was enrolled, and otp reads it from ykman on every call.
+-- Deliberately not recorded here: that state lives on the key, changes
+-- without touching this repo, and a stale claim about it is worse than no
+-- claim. `ykman oath accounts add -f` re-enrols one over itself to change it.
 --
 -- `otp` takes the account as an argument, so another service is one more
 -- bind -- but only Canvas has one, because the root menu's OTP submenu
