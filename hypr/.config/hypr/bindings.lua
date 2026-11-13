@@ -78,6 +78,30 @@ o.bind("SUPER + SHIFT + L", "Swap window to the right", hl.dsp.window.swap({ dir
 o.bind("SUPER + ALT + C", "Canvas OTP", "otp Canvas")
 
 -- ---------------------------------------------------------------------------
+-- Notifications: dismiss on the bare chord, act on ALT
+-- ---------------------------------------------------------------------------
+-- omarchy-settings 4.5.0 (2026-11-05, from 4.0.4) swapped these two. SUPER +
+-- comma used to dismiss the last notification and now runs notifications.act,
+-- which invokes or focuses when the card has anything to invoke and only
+-- dismisses when it does not -- so a notification with an action opens instead
+-- of going away. Dismissing is the common case here, and it should not cost an
+-- extra modifier, so this puts the two chords back the way round they were.
+--
+-- This is a deliberate revert, not a stale copy of an old default: leave it
+-- alone unless the preference changes.
+--
+-- Lowercase "comma" on purpose. xkbcommon names the keysym "comma" and
+-- "COMMA" silently fails to match -- the stock file carries the same warning.
+--
+-- No comma inside a description either: the keybindings menu truncates at the
+-- first one. Stock's own "Dismiss, invoke, or focus last notification" shows
+-- up there as just "Dismiss", which is why this one is worded without any.
+hl.unbind("SUPER + comma")
+hl.unbind("SUPER + ALT + comma")
+o.bind("SUPER + comma", "Dismiss last notification", { ipc = "notifications.dismissOne" })
+o.bind("SUPER + ALT + comma", "Invoke or focus last notification", { ipc = "notifications.act" })
+
+-- ---------------------------------------------------------------------------
 -- Middle click does nothing
 -- ---------------------------------------------------------------------------
 -- The trackpad is a mechanical clickpad that reports only BTN_LEFT; it has no
