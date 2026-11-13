@@ -509,7 +509,7 @@ stored `<issuer>:<name>`, so enrol on the key and add a row to
 `"action": "otp <Issuer>"`. The query must match **exactly one** account:
 `ykman oath accounts code -s` requires a single match, and touch-required
 credentials cannot be disambiguated any other way. `otp --list` shows what is
-on the key. Currently Canvas, Google, Betterment, Gusto and Atlassian.
+on the key. Currently Atlassian, Betterment, Bitbucket, Canvas, Google and Gusto.
 
 Reachable two ways: **`SUPER + ALT + C`**, and the root menu's **OTP**
 submenu (`SUPER + SPACE` → OTP → Canvas).

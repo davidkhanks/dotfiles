@@ -154,7 +154,7 @@
     "icon": "󰠄",
     "label": "Atlassian",
     "description": "Copy an Atlassian MFA code to the clipboard — jira confluence bitbucket login sign in",
-    "aliases": ["atlassian", "jira", "confluence", "bitbucket", "trello"],
+    "aliases": ["atlassian", "jira", "confluence", "trello"],
     "action": "otp Atlassian"
   },
 
@@ -164,6 +164,14 @@
     "description": "Copy a Betterment MFA code to the clipboard — retirement investing ira 401k brokerage",
     "aliases": ["betterment", "retirement", "investing", "ira", "401k", "brokerage"],
     "action": "otp Betterment"
+  },
+
+  "otp.bitbucket": {
+    "icon": "󰂨",
+    "label": "Bitbucket",
+    "description": "Copy a Bitbucket MFA code to the clipboard — git repo pull request source code",
+    "aliases": ["bitbucket", "git", "repo", "pr", "source"],
+    "action": "otp BitBucket"
   },
 
   "otp.canvas": {
