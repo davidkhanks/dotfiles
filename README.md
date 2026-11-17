@@ -42,6 +42,7 @@ own without re-answering every run.
 | `omastats` | third-party system monitor bar widget (CPU/GPU/mem/net/temp) |
 | `keyboard_brightness` | third-party bar widget for the keyboard backlight (bar-widget only, no service) |
 | `storage_analyzer` | third-party disk-usage bar widget with a "Space Hogs" panel (declares a service) |
+| `tuxedo_todo` | third-party todo.txt bar widget, plus the `tuxedo` CLI from the AUR that it shells out to for every change |
 | `blesh` | `ble.sh` — fish-style autosuggestions and highlighting for bash |
 | `gaming` | Steam, `gamescope`, MangoHud (off by default — large download) |
 | `tailscale` | `tailscale`, `tailscaled`, Taildrop receiver, Omarchy's **first-party** bar widget, admin-console web app |
@@ -77,7 +78,7 @@ narrow the gap, and the two approaches can coexist. Full reasoning in
 [`docs/remote-access.md`](docs/remote-access.md).
 
 Each third-party plugin (`airpods`, `hyprmoncfg`, `omasettings`, `omastats`,
-`keyboard_brightness`, `storage_analyzer`)
+`keyboard_brightness`, `storage_analyzer`, `tuxedo_todo`)
 is its own module because its QML runs **unsandboxed inside the long-lived
 `omarchy-shell` process** — `omarchy plugin add` refuses without `--yes` for
 exactly that reason, and three of them declare a `service` kind so they run

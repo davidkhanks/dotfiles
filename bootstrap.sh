@@ -300,6 +300,25 @@ KBDBRIGHTNESS_PLUGIN_ID="io.github.anes-03.keyboard-brightness"
 STORAGE_PLUGIN_URL="https://github.com/zaki2993/zakarch.storage.git"
 STORAGE_PLUGIN_ID="zakarch.storage"
 
+# Keyboard-first todo.txt dashboard in the bar. Bar-widget kind only, so its
+# QML runs only when the widget is drawn.
+#
+# Unusual among these plugins in needing an external binary: every add,
+# complete, delete and edit shells out to the `tuxedo` CLI, which the plugin
+# does NOT ship. Reading the file is pure Python, so without the AUR package
+# the widget opens and lists tasks but cannot change one -- which is why the
+# package and the plugin are the same module rather than two.
+TUXEDO_PLUGIN_URL="https://github.com/lpanebr/omarchy-tuxedo-todo.git"
+TUXEDO_PLUGIN_ID="omarchy-tuxedo"
+# The AUR package, which cargo-builds from a sha256-pinned source tarball --
+# NOT the prebuilt release binary the plugin's README points at.
+AUR_TUXEDO=(tuxedo)
+# Where the task list lives. The widget stores the real path in
+# ~/.local/state/omarchy/omarchy-tuxedo/state.json, which is machine state
+# this repo does not own; this is only the path to CREATE when the file is
+# missing entirely, and it matches the widget's own default.
+TUXEDO_TODO_FILE="$HOME/todo.txt"
+
 AIRPODS_PLUGIN_URL="https://github.com/thisisgm/omarchy-pods"
 AIRPODS_PLUGIN_ID="io.github.thisisgm.omapods"
 PACKAGES_AIRPODS=(cmake ninja qt6-connectivity qt6-tools qt6-declarative pkgconf libpulse)
@@ -341,7 +360,7 @@ HOST_FILES=(
 # different things (no fan control on a laptop, for instance), and neither
 # should have to re-answer the prompts on every run.
 BOOTSTRAP_CONF="${BOOTSTRAP_CONF:-$DOTFILES_DIR/bootstrap.conf}"
-MODULE_KEYS=(yubikey coolercontrol slack brave webapps airpods hyprmoncfg omasettings omastats keyboard_brightness storage_analyzer claude_plugins blesh gaming tailscale smb_shares rdp ssh_server herdr_nav work_repos work_setup nvim_default nvim_sync antivirus)
+MODULE_KEYS=(yubikey coolercontrol slack brave webapps airpods hyprmoncfg omasettings omastats keyboard_brightness storage_analyzer tuxedo_todo claude_plugins blesh gaming tailscale smb_shares rdp ssh_server herdr_nav work_repos work_setup nvim_default nvim_sync antivirus)
 declare -A MODULE_ENABLED=()
 
 module_desc() {
@@ -357,6 +376,7 @@ module_desc() {
     omastats)      echo "System monitor bar widget (third-party plugin)" ;;
     keyboard_brightness) echo "Keyboard backlight control in the bar (third-party plugin)" ;;
     storage_analyzer)    echo "Disk usage bar widget with a Space Hogs panel (third-party plugin)" ;;
+    tuxedo_todo)         echo "todo.txt dashboard in the bar (third-party plugin + tuxedo CLI from the AUR)" ;;
     claude_plugins) echo "Claude Code plugins from this repo (/ship and its bar button, /tickets, /prs)" ;;
     blesh)         echo "ble.sh: fish-style autosuggestions for bash" ;;
     gaming)        echo "Steam, gamescope and the MangoHud overlay" ;;
@@ -616,6 +636,7 @@ step_aur_packages() {
   local -a want=()
   enabled slack         && want+=("${AUR_SLACK[@]}")
   enabled hyprmoncfg    && want+=("${AUR_HYPRMONCFG[@]}")
+  enabled tuxedo_todo   && want+=("${AUR_TUXEDO[@]}")
   enabled work_setup    && want+=("${AUR_WORK[@]}")
   # Only when the distro has no repo package -- step_packages already took it
   # from `cachyos` otherwise, and asking the AUR for a second copy would drag
@@ -1972,6 +1993,36 @@ step_storage_analyzer() {
   note "A newly added plugin needs 'omarchy restart shell' before it renders."
 }
 
+step_tuxedo_todo() {
+  enabled tuxedo_todo || return 0
+  section "Todo widget"
+
+  ensure_plugin "$TUXEDO_PLUGIN_ID" "$TUXEDO_PLUGIN_URL"
+
+  # The widget does not create its own file. A missing path is reported as
+  # "The configured todo.txt file does not exist" and the panel stays empty;
+  # `tuxedo add` would create it, but only once there is a task to add, so a
+  # fresh machine shows an error until then. Creating it empty is the whole
+  # fix. 600 rather than the umask default: a todo list is personal, and the
+  # plugin's helper only requires a regular file owned by this user, so
+  # tightening the mode costs nothing.
+  if [[ -e "$TUXEDO_TODO_FILE" ]]; then
+    ok "todo file present"
+  elif acting "create $TUXEDO_TODO_FILE"; then
+    if (umask 077; : > "$TUXEDO_TODO_FILE"); then
+      changed "created $TUXEDO_TODO_FILE"
+    else
+      fail "could not create $TUXEDO_TODO_FILE"
+    fi
+  fi
+
+  # Worth saying out loud: the widget looks installed and working right up
+  # until the first attempt to add a task.
+  have tuxedo || note "The todo widget cannot add or complete tasks until the tuxedo CLI is installed (AUR)."
+
+  note "A newly added plugin needs 'omarchy restart shell' before it renders."
+}
+
 step_omastats() {
   enabled omastats || return 0
   section "System monitor widget"
@@ -2590,6 +2641,7 @@ main() {
   step_omastats
   step_keyboard_brightness
   step_storage_analyzer
+  step_tuxedo_todo
   step_claude_plugins
   step_tailscale
   step_smb_shares
