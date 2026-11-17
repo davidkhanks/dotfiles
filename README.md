@@ -43,6 +43,7 @@ own without re-answering every run.
 | `keyboard_brightness` | third-party bar widget for the keyboard backlight (bar-widget only, no service) |
 | `storage_analyzer` | third-party disk-usage bar widget with a "Space Hogs" panel (declares a service) |
 | `tuxedo_todo` | third-party todo.txt bar widget, plus the `tuxedo` CLI from the AUR that it shells out to for every change |
+| `claude_desktop` | the Claude Desktop app (Omarchy's repo package, AUR fallback) plus `qemu-system-x86`/`edk2-ovmf`/`virtiofsd`, without which Cowork silently disables its VM-backed features |
 | `blesh` | `ble.sh` — fish-style autosuggestions and highlighting for bash |
 | `gaming` | Steam, `gamescope`, MangoHud (off by default — large download) |
 | `tailscale` | `tailscale`, `tailscaled`, Taildrop receiver, Omarchy's **first-party** bar widget, admin-console web app |

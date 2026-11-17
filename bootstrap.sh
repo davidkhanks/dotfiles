@@ -319,6 +319,36 @@ AUR_TUXEDO=(tuxedo)
 # missing entirely, and it matches the widget's own default.
 TUXEDO_TODO_FILE="$HOME/todo.txt"
 
+# Claude Desktop -- the Chat / Cowork / Claude Code app. Omarchy ships it in
+# its own pacman repo, so there it is a plain package; on CachyOS or stock Arch
+# the AUR carries a build that repackages the same official .deb from
+# downloads.claude.ai, and step_aur_packages falls back to that. Same shape as
+# PKG_COOLERCONTROL above.
+PKG_CLAUDE_DESKTOP=claude-desktop
+AUR_CLAUDE_DESKTOP=(claude-desktop)
+
+# Cowork runs its sandbox in a QEMU/KVM virtual machine on Linux, and NONE of
+# that stack arrives on its own: Omarchy's package lists only qemu-system-x86,
+# as an *optional* dependency, and does not mention the other two at all.
+#
+# Installing them is not optional in practice, because of how the app fails
+# without them. It probes once at startup, finds no QEMU, and marks its
+# VM-backed features "unsupported" in an internal feature blob -- no error, no
+# notification, nothing in the UI. Everything else keeps working, so the app
+# looks healthy while silently missing capabilities. That is why this is a
+# package list rather than a note telling a future reader to install it if they
+# want Cowork.
+#   qemu-system-x86 -- the virtual machine itself
+#   edk2-ovmf       -- UEFI firmware. The package ships
+#                      /usr/share/edk2/OVMF_CODE_4M.fd (Debian's filename) as a
+#                      symlink into this package's x64/ directory.
+#   virtiofsd       -- host<->guest filesystem sharing, reached through
+#                      /usr/libexec/virtiofsd, likewise a symlink.
+# Both symlinks ship DANGLING until these are installed -- which is the quickest
+# way to tell a half-finished install from a working one. step_claude_desktop
+# below checks exactly that.
+PACKAGES_CLAUDE_DESKTOP=(qemu-system-x86 edk2-ovmf virtiofsd)
+
 AIRPODS_PLUGIN_URL="https://github.com/thisisgm/omarchy-pods"
 AIRPODS_PLUGIN_ID="io.github.thisisgm.omapods"
 PACKAGES_AIRPODS=(cmake ninja qt6-connectivity qt6-tools qt6-declarative pkgconf libpulse)
@@ -360,7 +390,7 @@ HOST_FILES=(
 # different things (no fan control on a laptop, for instance), and neither
 # should have to re-answer the prompts on every run.
 BOOTSTRAP_CONF="${BOOTSTRAP_CONF:-$DOTFILES_DIR/bootstrap.conf}"
-MODULE_KEYS=(yubikey coolercontrol slack brave webapps airpods hyprmoncfg omasettings omastats keyboard_brightness storage_analyzer tuxedo_todo claude_plugins blesh gaming tailscale smb_shares rdp ssh_server herdr_nav work_repos work_setup nvim_default nvim_sync antivirus)
+MODULE_KEYS=(yubikey coolercontrol slack brave webapps airpods hyprmoncfg omasettings omastats keyboard_brightness storage_analyzer tuxedo_todo claude_desktop claude_plugins blesh gaming tailscale smb_shares rdp ssh_server herdr_nav work_repos work_setup nvim_default nvim_sync antivirus)
 declare -A MODULE_ENABLED=()
 
 module_desc() {
@@ -377,6 +407,7 @@ module_desc() {
     keyboard_brightness) echo "Keyboard backlight control in the bar (third-party plugin)" ;;
     storage_analyzer)    echo "Disk usage bar widget with a Space Hogs panel (third-party plugin)" ;;
     tuxedo_todo)         echo "todo.txt dashboard in the bar (third-party plugin + tuxedo CLI from the AUR)" ;;
+    claude_desktop) echo "Claude Desktop app (Chat, Cowork, Claude Code) and Cowork's QEMU/KVM stack" ;;
     claude_plugins) echo "Claude Code plugins from this repo (/ship and its bar button, /tickets, /prs)" ;;
     blesh)         echo "ble.sh: fish-style autosuggestions for bash" ;;
     gaming)        echo "Steam, gamescope and the MangoHud overlay" ;;
@@ -596,12 +627,16 @@ step_packages() {
   enabled antivirus  && want+=("${PACKAGES_ANTIVIRUS[@]}")
   enabled rdp        && want+=("${PACKAGES_RDP[@]}")
   enabled work_setup && want+=("${PACKAGES_WORK[@]}")
+  enabled claude_desktop && want+=("${PACKAGES_CLAUDE_DESKTOP[@]}")
   # Prefer the repo package where the distro has one (CachyOS); otherwise this
   # stays empty and step_aur_packages picks it up instead. Spelled as an `if`
   # rather than extending the `&&` column above only because it is two
   # conditions, matching the `if acting ...; then` convention used elsewhere.
   if enabled coolercontrol && repo_has "$PKG_COOLERCONTROL"; then
     want+=("$PKG_COOLERCONTROL")
+  fi
+  if enabled claude_desktop && repo_has "$PKG_CLAUDE_DESKTOP"; then
+    want+=("$PKG_CLAUDE_DESKTOP")
   fi
   local missing=()
   for p in "${want[@]}"; do
@@ -643,6 +678,9 @@ step_aur_packages() {
   # in a helper this machine may not have.
   if enabled coolercontrol && ! repo_has "$PKG_COOLERCONTROL"; then
     want+=("${AUR_COOLERCONTROL[@]}")
+  fi
+  if enabled claude_desktop && ! repo_has "$PKG_CLAUDE_DESKTOP"; then
+    want+=("${AUR_CLAUDE_DESKTOP[@]}")
   fi
   if (( ${#want[@]} == 0 )); then
     skip "no AUR packages selected"
@@ -2032,6 +2070,51 @@ step_omastats() {
   note "A newly added plugin needs 'omarchy restart shell' before it renders."
 }
 
+step_claude_desktop() {
+  enabled claude_desktop || return 0
+  section "Claude Desktop"
+
+  # The packages themselves are installed by step_packages / step_aur_packages;
+  # this verifies the half of the setup that a package manager cannot.
+  if ! have claude-desktop; then
+    skip "claude-desktop not installed"
+    return 0
+  fi
+
+  # Cowork's VM needs hardware virtualization. A machine with it disabled in
+  # firmware, or a guest without nested virt, installs every package happily
+  # and still cannot start a Cowork VM -- so check the device, not the package.
+  # Arch's udev ships /dev/kvm mode 0666, so group membership is not the issue
+  # it is on Debian; if that ever changes, the symptom is a permission error
+  # here rather than a missing node.
+  if [[ -e /dev/kvm ]]; then
+    ok "hardware virtualization available"
+  else
+    note "No /dev/kvm on $HOSTNAME_SHORT -- Cowork's local VM cannot start. Enable virtualization in the BIOS/UEFI."
+    skip "no /dev/kvm"
+  fi
+
+  # The app hardcodes Debian's paths for the VM stack and the package ships
+  # symlinks for them. They dangle until edk2-ovmf and virtiofsd are installed,
+  # which is the one externally visible sign of the silent degradation
+  # described at PACKAGES_CLAUDE_DESKTOP.
+  local link broken=()
+  for link in /usr/libexec/virtiofsd /usr/share/edk2/OVMF_CODE_4M.fd; do
+    [[ -e $link ]] || broken+=("$link")
+  done
+  if (( ${#broken[@]} == 0 )); then
+    ok "Cowork VM stack resolves"
+  else
+    note "Dangling Cowork symlinks (${broken[*]}) -- Cowork's VM features stay off until the packages above are installed."
+    fail "Cowork VM stack incomplete"
+  fi
+
+  # Worth stating because nothing in the UI does: the probe runs once, at
+  # startup. Installing the stack under a running app changes nothing until it
+  # is fully quit -- and the window close button only hides it in the tray.
+  note "Claude Desktop checks for QEMU only at startup; quit it from the tray and relaunch after a change here."
+}
+
 step_claude_plugins() {
   enabled claude_plugins || return 0
   section "Claude Code plugins"
@@ -2642,6 +2725,7 @@ main() {
   step_keyboard_brightness
   step_storage_analyzer
   step_tuxedo_todo
+  step_claude_desktop
   step_claude_plugins
   step_tailscale
   step_smb_shares
