@@ -1,0 +1,16 @@
+[Unit]
+Description=Archive completed todo.txt tasks into done.txt
+Documentation=https://github.com/lpanebr/omarchy-tuxedo-todo
+# The Tuxedo Todo widget's activity heatmap reads only done.txt, but checking a
+# task off (`tuxedo do`) leaves it in todo.txt marked `x`, and the widget never
+# runs `tuxedo archive` itself. Without this, completed tasks never reach the
+# heatmap at all.
+ConditionPathExists=%h/todo.txt
+
+[Service]
+Type=oneshot
+# Same paths the widget passes on every action: done.txt beside todo.txt.
+Environment=TODO_FILE=%h/todo.txt DONE_FILE=%h/done.txt
+ExecStart=/usr/bin/tuxedo archive
+# A first run creates done.txt; keep it as private as todo.txt.
+UMask=0077

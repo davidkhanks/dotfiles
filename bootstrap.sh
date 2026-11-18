@@ -39,7 +39,7 @@ DOTFILES_REPO="${DOTFILES_REPO:-https://github.com/davidkhanks/dotfiles.git}"
 DOTFILES_DIR="${DOTFILES_DIR:-$HOME/dotfiles}"
 
 # Stow packages, in the order they should be applied.
-STOW_PACKAGES=(bash bin clamav fish foot hypr nvim omarchy slack ssh starship tmux)
+STOW_PACKAGES=(bash bin clamav fish foot hypr nvim omarchy slack ssh starship tmux tuxedo)
 
 # Pacman packages this setup depends on.
 #   stow             -- symlink farm manager for the dotfiles
@@ -768,6 +768,7 @@ step_stow() {
     case "$pkg" in
       slack) enabled slack || { skip "$pkg (module off)"; continue; } ;;
       clamav) enabled antivirus || { skip "$pkg (module off)"; continue; } ;;
+      tuxedo) enabled tuxedo_todo || { skip "$pkg (module off)"; continue; } ;;
       # Hyprland config and Omarchy branding/hooks have nothing to attach to on
       # a non-Omarchy box that shares this repo (the CachyOS gaming machine).
       # Auto-detected rather than made a module so existing bootstrap.conf
@@ -2052,6 +2053,21 @@ step_tuxedo_todo() {
     else
       fail "could not create $TUXEDO_TODO_FILE"
     fi
+  fi
+
+  # The widget's activity heatmap reads only done.txt, and nothing but
+  # `tuxedo archive` moves checked-off tasks there -- the widget never calls
+  # it. So without this timer the heatmap stays empty however much gets done.
+  # The unit comes from the stowed tuxedo package.
+  local timer=tuxedo-archive.timer
+  if [[ ! -e "$HOME/.config/systemd/user/$timer" ]]; then
+    skip "$timer missing (stow the tuxedo package first)"
+  elif [[ "$(systemctl --user is-enabled "$timer" 2>/dev/null)" == "enabled" ]]; then
+    ok "$timer enabled (nightly 00:05)"
+  elif acting "enable $timer"; then
+    systemctl --user daemon-reload
+    systemctl --user enable --now "$timer" && changed "$timer enabled" \
+      || fail "could not enable $timer"
   fi
 
   # Worth saying out loud: the widget looks installed and working right up

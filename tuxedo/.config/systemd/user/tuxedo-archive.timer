@@ -1,0 +1,14 @@
+[Unit]
+Description=Archive completed todo.txt tasks nightly (00:05)
+
+[Timer]
+# Nightly rather than hourly: tasks checked off today stay visible (struck
+# through) in the list for the rest of the day, and land on the heatmap at
+# midnight. The heatmap is per-day, so nothing is lost by waiting.
+OnCalendar=*-*-* 00:05:00
+# The laptop is usually suspended at midnight; catch up at the next wake.
+Persistent=true
+WakeSystem=false
+
+[Install]
+WantedBy=timers.target
