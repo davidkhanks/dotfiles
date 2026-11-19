@@ -1,63 +1,68 @@
+-- Parsers to keep installed. `install` is a no-op for ones already present.
+local parsers = {
+	"bash",
+	"c",
+	"css",
+	"dockerfile",
+	"gitignore",
+	"go",
+	"html",
+	"javascript",
+	"json",
+	"lua",
+	"markdown",
+	"markdown_inline",
+	"prisma",
+	"python",
+	"query",
+	"typescript",
+	"tsx",
+	"vim",
+	"vimdoc",
+	"yaml",
+}
+
 return {
 	"nvim-treesitter/nvim-treesitter",
-	-- Pin to master: the `main` branch is the rewrite, which drops
-	-- `nvim-treesitter.configs` and breaks the config below. Without an
-	-- explicit branch, lazy.nvim clones the default branch (now `main`)
-	-- and cannot reach the pinned commit.
-	branch = "master",
-	commit = "92725df6222614307c4712eb9982e5287f21aa11",
-	event = { "BufReadPre", "BufNewFile" },
+	-- `main` is the rewrite, and the only branch that works on Neovim 0.12.
+	-- `master` is archived and stops at 0.11: 0.12 removed the `all = false`
+	-- option its query directives relied on, so every directive received a
+	-- list of nodes instead of a node. In Markdown that raised
+	-- "attempt to call method 'range' (a nil value)" from languagetree.lua on
+	-- every reparse -- i.e. on nearly every cursor move.
+	--
+	-- `main` has no `nvim-treesitter.configs` and no modules: highlighting and
+	-- indent are enabled per buffer below, and incremental selection is gone
+	-- (Neovim 0.12's built-in `an`/`in` in visual mode covers it where an LSP
+	-- is attached). It needs the `tree-sitter` CLI to build parsers.
+	branch = "main",
+	commit = "37e52c733ada9d8d544d53a763140ef1ba404353",
+	-- `main` does not support lazy-loading.
+	lazy = false,
 	build = ":TSUpdate",
 	dependencies = {
 		{ "windwp/nvim-ts-autotag", commit = "e239a560f338be31337e7abc3ee42515daf23f5e" },
 	},
 	config = function()
-		-- import nvim-treesitter plugin
-		local treesitter = require("nvim-treesitter.configs")
+		require("nvim-treesitter").install(parsers)
 
-		-- configure treesitter
-		treesitter.setup({ -- enable syntax highlighting
-			highlight = {
-				enable = true,
-			},
-			-- enable indentation
-			indent = { enable = true },
-			-- enable autotagging (w/ nvim-ts-autotag plugin)
-			autotag = {
-				enable = true,
-			},
-			-- ensure these language parsers are installed
-			ensure_installed = {
-				"bash",
-				"c",
-				"css",
-				"dockerfile",
-				"gitignore",
-				"go",
-				"html",
-				"javascript",
-				"json",
-				"lua",
-				"markdown",
-				"markdown_inline",
-				"prisma",
-				"python",
-				"query",
-				"typescript",
-				"tsx",
-				"vim",
-				"vimdoc",
-				"yaml",
-			},
-			incremental_selection = {
-				enable = true,
-				keymaps = {
-					init_selection = "<C-space>",
-					node_incremental = "<C-space>",
-					scope_incremental = false,
-					node_decremental = "<bs>",
-				},
-			},
+		vim.api.nvim_create_autocmd("FileType", {
+			group = vim.api.nvim_create_augroup("davidkhanks-treesitter", { clear = true }),
+			callback = function(args)
+				-- Errors when no parser exists for this filetype; that just
+				-- means no treesitter here, so leave the buffer alone.
+				if not pcall(vim.treesitter.start, args.buf) then
+					return
+				end
+				local lang = vim.treesitter.language.get_lang(vim.bo[args.buf].filetype)
+				if lang and vim.treesitter.query.get(lang, "indents") then
+					vim.bo[args.buf].indentexpr = "v:lua.require'nvim-treesitter'.indentexpr()"
+				end
+			end,
 		})
+
+		-- Used to be enabled through nvim-treesitter's `autotag` module, which
+		-- `main` no longer has.
+		require("nvim-ts-autotag").setup()
 	end,
 }

@@ -61,7 +61,11 @@ STOW_PACKAGES=(bash bin clamav fish foot hypr nvim omarchy slack ssh starship tm
 #                       is a no-op there (--needed). Listed because their stowed
 #                       configs are applied on EVERY machine, including
 #                       non-Omarchy ones where nothing else would pull them in.
-PACKAGES_CORE=(stow git starship tmux fzf neovim)
+#   tree-sitter-cli  -- nvim-treesitter's `main` branch compiles every parser
+#                       with it. Without it the nvim config loads but no parser
+#                       installs, so there is no highlighting and nothing says
+#                       why beyond a one-off install error.
+PACKAGES_CORE=(stow git starship tmux fzf neovim tree-sitter-cli)
 #   lxqt-openssh-askpass -- Wayland-native GUI PIN prompt for the hotplug
 #                           reload; gcr-ssh-askpass refuses to run standalone
 #   wl-clipboard     -- wl-copy, how bin/.local/bin/otp delivers a one-time

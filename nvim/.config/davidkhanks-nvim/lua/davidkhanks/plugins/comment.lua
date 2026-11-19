@@ -3,7 +3,7 @@ return {
 	commit = "e30b7f2008e52442154b66f7c519bfd2f1e32acb",
 	event = { "BufReadPre", "BufNewFile" },
 	dependencies = {
-		{ "JoosepAlviste/nvim-ts-context-commentstring", commit = "9c74db656c3d0b1c4392fc89a016b1910539e7c0" },
+		{ "JoosepAlviste/nvim-ts-context-commentstring", commit = "6141a40173c6efa98242dc951ed4b6f892c97027" },
 	},
 	config = function()
 		-- import comment plugin safely
